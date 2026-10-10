@@ -46,7 +46,8 @@ export function parseMoney(raw: string, symbol = '$'): ParseResult {
   let negative = false;
   if (s.startsWith('-') || s.startsWith('−')) { negative = true; s = trimSpaces(s.slice(1)); }
   for (const sym of [symbol, '$']) {
-    if (sym === '') continue;
+    // a symbol with a digit, or made only of separators, would eat part of the amount ("1" turned "12.50" into 2.50)
+    if (sym === '' || /\p{Nd}/u.test(sym) || !/[^.,\-−\s]/u.test(sym)) continue;
     if (s.startsWith(sym)) { s = trimSpaces(s.slice(sym.length)); break; }
     if (s.endsWith(sym)) { s = trimSpaces(s.slice(0, s.length - sym.length)); break; }
   }

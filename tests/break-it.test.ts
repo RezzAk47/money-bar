@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeMoneyFile, uniqueIds } from '../src/core/model';
 import type { Entry } from '../src/core/model';
 import { MoneyStore } from '../src/core/store';
+import { parseMoney } from '../src/core/money';
 import { Clock, nodeIO, noon, tmpDir } from './helpers';
 
 const X = 'AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE';
@@ -62,6 +63,23 @@ describe('a save that reached the disk but was reported as failed', () => {
     expect(await s.add('expense', 999, 'Food', '', '2026-10-06')).toContain('Could not save');
     expect(s.entries).toHaveLength(0);
     expect(decodeMoneyFile(fs.readFileSync(file, 'utf8')).entries).toHaveLength(0);
+  });
+});
+
+describe('a currency symbol made of digits or separators', () => {
+  // Settings accept any 1 to 3 characters as the symbol. "1" was stripped from the front of "12.50", which then read as $2.50.
+  it('never eats part of the amount', () => {
+    expect(parseMoney('12.50', '1')).toEqual({ ok: true, cents: 1250 });
+    expect(parseMoney('10', '0')).toEqual({ ok: true, cents: 1000 });
+    expect(parseMoney('.5', '.')).toEqual({ ok: true, cents: 50 });
+    expect(parseMoney('12.50', '١')).toEqual({ ok: true, cents: 1250 }); // Arabic-Indic one
+    expect(parseMoney('1,000', ',')).toEqual({ ok: true, cents: 100000 });
+  });
+  it('ordinary symbols, with letters or a dot after letters, still work', () => {
+    expect(parseMoney('kr.12.50', 'kr.')).toEqual({ ok: true, cents: 1250 });
+    expect(parseMoney('12.50 Rs.', 'Rs.')).toEqual({ ok: true, cents: 1250 });
+    expect(parseMoney('R$ 3', 'R$')).toEqual({ ok: true, cents: 300 });
+    expect(parseMoney('$7', '1')).toEqual({ ok: true, cents: 700 });
   });
 });
 
