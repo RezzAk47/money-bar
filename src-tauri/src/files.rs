@@ -744,9 +744,22 @@ pub fn suggested_csv_name(raw: &str) -> String {
         .to_string();
     if stem.is_empty() {
         "money-bar-report.csv".into()
+    } else if is_windows_reserved(&stem) {
+        format!("_{stem}.csv")
     } else {
         format!("{stem}.csv")
     }
+}
+
+/// A Windows device name (CON, PRN, AUX, NUL, COM0-9, LPT0-9), with any extension and any case: Windows treats `CON.csv` and
+/// `nul.tar.csv` as the device, so such a name is prefixed with an underscore on every system (a file made on Linux must open on Windows).
+fn is_windows_reserved(stem: &str) -> bool {
+    let base = stem.split('.').next().unwrap_or("").trim_end_matches(' ');
+    let up = base.to_ascii_uppercase();
+    matches!(up.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (up.len() == 4
+            && (up.starts_with("COM") || up.starts_with("LPT"))
+            && up.as_bytes()[3].is_ascii_digit())
 }
 
 /// The whole export: the page supplies only the text and a suggested name. `pick` stands for the native save dialog (injected,
@@ -1498,6 +1511,23 @@ mod tests {
         assert_eq!(suggested_csv_name(""), "money-bar-report.csv");
         assert_eq!(suggested_csv_name("..."), "money-bar-report.csv");
         assert_eq!(suggested_csv_name("a/b\\c:d.CSV"), "abcd.csv");
+        // Windows device names, in any case and with any extension, would open the device instead of making a file
+        for (raw, want) in [
+            ("CON", "_CON.csv"),
+            ("CON.csv", "_CON.csv"),
+            ("nul", "_nul.csv"),
+            ("Aux.report", "_Aux.report.csv"),
+            ("com1", "_com1.csv"),
+            ("LPT9.csv", "_LPT9.csv"),
+            ("COM0", "_COM0.csv"),
+            ("CON .csv", "_CON .csv"),
+            ("console", "console.csv"),
+            ("com10", "com10.csv"),
+            ("COM", "COM.csv"),
+            ("my.con", "my.con.csv"),
+        ] {
+            assert_eq!(suggested_csv_name(raw), want, "{raw}");
+        }
         // a path the dialog returns is validated again: not .csv, inside the data folder, relative
         for bad in [
             out.join("x.txt"),
