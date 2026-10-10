@@ -263,8 +263,10 @@ export function uniqueIds(list: Entry[]): Entry[] {
   const seen = new Set<string>();
   return list.map((e, i) => {
     if (!seen.has(e.id)) { seen.add(e.id); return e; }
-    let salt = 1, id = derivedId(e.id, salt);
-    while (seen.has(id)) { salt = (salt + 1 + (i & 0xff)) & 0xff; id = derivedId(e.id, salt); }
+    let salt = 1, id = derivedId(e.id, salt), tries = 1;
+    // The first 256 tries follow the original salt walk (so ids already derived stay the same). That walk can cycle (a step of
+    // 256 never moves): after it, salts 256, 257, ... are tried in order, which always ends.
+    while (seen.has(id)) { salt = tries < 256 ? (salt + 1 + (i & 0xff)) & 0xff : 256 + (tries - 256); tries++; id = derivedId(e.id, salt); }
     seen.add(id);
     return { ...e, id };
   });
