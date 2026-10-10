@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-hold-popup-open"
+description = "Enables the hold_popup_open command without any pre-configured scope."
+commands.allow = ["hold_popup_open"]
+
+[[permission]]
+identifier = "deny-hold-popup-open"
+description = "Denies the hold_popup_open command without any pre-configured scope."
+commands.deny = ["hold_popup_open"]

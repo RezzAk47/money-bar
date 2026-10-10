@@ -1,0 +1,11 @@
+# Same bytes on every OS: tests compare text files and fixtures byte for byte, and a Windows checkout must not turn LF into CRLF.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary
+*.dmg binary
+*.woff2 binary
+tests/fixtures/*.json text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.rs text eol=lf

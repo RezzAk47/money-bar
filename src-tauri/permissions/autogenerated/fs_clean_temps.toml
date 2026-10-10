@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-fs-clean-temps"
+description = "Enables the fs_clean_temps command without any pre-configured scope."
+commands.allow = ["fs_clean_temps"]
+
+[[permission]]
+identifier = "deny-fs-clean-temps"
+description = "Denies the fs_clean_temps command without any pre-configured scope."
+commands.deny = ["fs_clean_temps"]
