@@ -686,7 +686,8 @@ pub fn export_csv(path: &str, text: &str, data_dir: &Path) -> Result<(), String>
         f.write_all(text.as_bytes())?;
         f.sync_all()?;
         drop(f);
-        fs::rename(&tmp, &target)
+        // the same Windows retry as entries.json: a virus scanner opening the fresh temp file must not fail the export
+        rename_retry(&tmp, &target)
     })();
     if result.is_err() {
         let _ = fs::remove_file(&tmp);
