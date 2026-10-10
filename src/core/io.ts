@@ -1,4 +1,5 @@
-/** Whole microseconds since the epoch (integers, exact through JSON) and the inode as a decimal string. */
+/** Whole microseconds since the epoch (integers, exact through JSON) and the inode as a decimal string.
+ *  `hash` is the content hash of files up to 1 MiB; "" or absent above that (the Rust side then compares metadata only). */
 export interface FileStamp { size: number; mtimeUs: number; ctimeUs: number; ino: string; hash?: string }
 
 /** Thrown by `write` when the file changed since the stamp it was told to expect (somebody else wrote it). */

@@ -23,15 +23,20 @@ pub struct Stamp {
     pub mtime_us: i64,
     pub ctime_us: i64,
     pub ino: String,
-    /// FNV-1a 64 of the content as 16 hex digits ("" when it could not be read or the file is too big). FAT/exFAT keep modification
+    /// FNV-1a 64 of the content as 16 hex digits ("" when it could not be read or the file is over `HASH_MAX_BYTES`). FAT/exFAT keep modification
     /// times to 2 seconds and have no inode or real change time, so an equal mtime alone cannot prove a file is unchanged.
     #[serde(default)]
     pub hash: String,
 }
 
 /// A cheap, stable, non-cryptographic hash of a file's bytes (never used for security).
+///
+/// Only files up to `HASH_MAX_BYTES` are hashed: `stat` runs every few seconds and would otherwise re-read the whole file each time
+/// (about 7 ms per tick for 5 MB in a release build, far more in a debug one). A real entries.json is a few hundred KB; a bigger one
+/// is compared by size, modification time, change time and inode only.
+pub const HASH_MAX_BYTES: u64 = 1024 * 1024;
 fn content_hash(p: &Path, len: u64) -> String {
-    if len > MAX_READ_BYTES {
+    if len > HASH_MAX_BYTES {
         return String::new();
     }
     match fs::read(p) {
@@ -55,6 +60,24 @@ fn stamp_at(p: &Path) -> std::io::Result<Stamp> {
         s.hash = content_hash(p, m.len());
     }
     Ok(s)
+}
+
+/// The compare-and-swap check, run under the write lock: the cheap metadata must be equal, and the content hash is computed (one
+/// read, only for files up to `HASH_MAX_BYTES`) only when the expected stamp carries one and everything else already matches.
+fn cas_matches(p: &Path, expected: &Option<Stamp>) -> bool {
+    let meta = fs::metadata(p).ok();
+    match (meta, expected) {
+        (None, None) => true,
+        (Some(m), Some(e)) => {
+            let now = stamp_of(&m);
+            let same_meta = now.size == e.size
+                && now.mtime_us == e.mtime_us
+                && now.ctime_us == e.ctime_us
+                && now.ino == e.ino;
+            same_meta && (e.hash.is_empty() || !m.is_file() || content_hash(p, m.len()) == e.hash)
+        }
+        _ => false,
+    }
 }
 
 /// Whole microseconds since the epoch (negative before it).
@@ -573,8 +596,7 @@ fn write_inner(
             None
         };
         if let Some(expected) = &check {
-            let now = stamp_at(&p).ok();
-            if now != *expected {
+            if !cas_matches(&p, expected) {
                 return Err(CONFLICT.into());
             }
         }
@@ -1740,6 +1762,74 @@ mod tests {
         );
         // and the same content stays the same stamp
         assert_eq!(stat(d.path(), "entries.json").unwrap().unwrap(), s2);
+    }
+
+    #[test]
+    fn files_over_the_hash_cap_get_no_hash_and_still_conflict_on_metadata() {
+        let d = tempfile::tempdir().unwrap();
+        let big = format!(
+            "{{\"entries\":[\"{}\"]}}",
+            "a".repeat(HASH_MAX_BYTES as usize)
+        );
+        write(d.path(), "entries.json", &big, None).unwrap();
+        let s1 = stat(d.path(), "entries.json").unwrap().unwrap();
+        assert_eq!(s1.hash, "");
+        let small = fs::metadata(d.path().join("entries.json")).unwrap().len() <= HASH_MAX_BYTES;
+        assert!(!small);
+        // a small file does carry one, and a hash-less expectation never costs a read but still matches the metadata
+        write(
+            d.path(),
+            "entries.json",
+            "{\"entries\":[1]}",
+            Some(Some(s1.clone())),
+        )
+        .unwrap();
+        let s2 = stat(d.path(), "entries.json").unwrap().unwrap();
+        assert_eq!(s2.hash.len(), 16);
+        let stale = Stamp {
+            hash: String::new(),
+            ..s1
+        };
+        assert_eq!(
+            write(d.path(), "entries.json", "x", Some(Some(stale))).unwrap_err(),
+            CONFLICT
+        );
+        // a hash-less stamp of the current metadata is accepted; a wrong hash is not
+        let no_hash = Stamp {
+            hash: String::new(),
+            ..s2.clone()
+        };
+        write(
+            d.path(),
+            "entries.json",
+            "{\"entries\":[2]}",
+            Some(Some(no_hash)),
+        )
+        .unwrap();
+        let s3 = stat(d.path(), "entries.json").unwrap().unwrap();
+        let wrong = Stamp {
+            hash: "0000000000000000".into(),
+            ..s3
+        };
+        assert_eq!(
+            write(d.path(), "entries.json", "x", Some(Some(wrong))).unwrap_err(),
+            CONFLICT
+        );
+    }
+
+    #[test]
+    #[ignore = "timing probe: cargo test stat_cost -- --ignored --nocapture"]
+    fn stat_cost_probe() {
+        for mb in [1usize, 5, 30, 50] {
+            let d = tempfile::tempdir().unwrap();
+            let text = format!("{{\"entries\":[\"{}\"]}}", "a".repeat(mb * 1024 * 1024));
+            fs::write(d.path().join("entries.json"), &text).unwrap();
+            let t = std::time::Instant::now();
+            for _ in 0..20 {
+                stat(d.path(), "entries.json").unwrap().unwrap();
+            }
+            println!("TIMING {mb} MB: {:?} per stat", t.elapsed() / 20);
+        }
     }
 
     #[test]

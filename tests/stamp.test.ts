@@ -19,4 +19,9 @@ describe('stamps are exact integers', () => {
     expect(sameStamp(a, { ...a })).toBe(true); expect(sameStamp(a, null)).toBe(false); expect(sameStamp(null, null)).toBe(true);
     for (const o of [{ mtimeUs: a.mtimeUs + 1 }, { ctimeUs: a.ctimeUs + 1 }, { size: 11 }, { ino: '6' }, { hash: 'ab' }]) expect(sameStamp(a, { ...a, ...o })).toBe(false);
   });
+  it('a stamp of a big file (no hash, as "" or absent) is the same stamp either way', () => {
+    const a: FileStamp = { size: 5_000_000, mtimeUs: 1, ctimeUs: 2, ino: '5' };
+    expect(sameStamp(a, { ...a, hash: '' })).toBe(true);
+    expect(sameStamp({ ...a, hash: 'ab' }, { ...a, hash: '' })).toBe(false);
+  });
 });
