@@ -23,6 +23,38 @@ pub struct Stamp {
     pub mtime_us: i64,
     pub ctime_us: i64,
     pub ino: String,
+    /// FNV-1a 64 of the content as 16 hex digits ("" when it could not be read or the file is too big). FAT/exFAT keep modification
+    /// times to 2 seconds and have no inode or real change time, so an equal mtime alone cannot prove a file is unchanged.
+    #[serde(default)]
+    pub hash: String,
+}
+
+/// A cheap, stable, non-cryptographic hash of a file's bytes (never used for security).
+fn content_hash(p: &Path, len: u64) -> String {
+    if len > MAX_READ_BYTES {
+        return String::new();
+    }
+    match fs::read(p) {
+        Ok(b) => {
+            let mut h: u64 = 0xcbf29ce484222325;
+            for x in b {
+                h ^= x as u64;
+                h = h.wrapping_mul(0x100000001b3);
+            }
+            format!("{h:016x}")
+        }
+        Err(_) => String::new(),
+    }
+}
+
+/// The full stamp of the file at `p` (following a link): metadata plus the content hash.
+fn stamp_at(p: &Path) -> std::io::Result<Stamp> {
+    let m = fs::metadata(p)?;
+    let mut s = stamp_of(&m);
+    if m.is_file() {
+        s.hash = content_hash(p, m.len());
+    }
+    Ok(s)
 }
 
 /// Whole microseconds since the epoch (negative before it).
@@ -46,6 +78,7 @@ pub fn stamp_of(m: &fs::Metadata) -> Stamp {
             mtime_us,
             ctime_us: m.ctime() * 1_000_000 + m.ctime_nsec() / 1000,
             ino: m.ino().to_string(),
+            hash: String::new(),
         }
     }
     #[cfg(not(unix))]
@@ -56,6 +89,7 @@ pub fn stamp_of(m: &fs::Metadata) -> Stamp {
             mtime_us,
             ctime_us: us(m.created()),
             ino: String::new(),
+            hash: String::new(),
         }
     }
 }
@@ -327,8 +361,8 @@ pub fn read(dir: &Path, name: &str) -> Result<Option<String>, String> {
 
 pub fn stat(dir: &Path, name: &str) -> Result<Option<Stamp>, String> {
     let p = resolve(dir, name)?;
-    match fs::metadata(&p) {
-        Ok(m) => Ok(Some(stamp_of(&m))),
+    match stamp_at(&p) {
+        Ok(s) => Ok(Some(s)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(format!("cannot stat {name}: {e}")),
     }
@@ -483,7 +517,7 @@ pub fn write_with_hook(
             None
         };
         if let Some(expected) = &check {
-            let now = fs::metadata(&p).ok().map(|m| stamp_of(&m));
+            let now = stamp_at(&p).ok();
             if now != *expected {
                 return Err(CONFLICT.into());
             }
@@ -1595,6 +1629,38 @@ mod tests {
     }
 
     #[test]
+    fn same_size_mtime_ctime_and_inode_but_other_content_is_a_different_stamp() {
+        // FAT/exFAT keep modification times to 2 s and have no useful inode or change time: the content hash is what tells
+        let d = tempfile::tempdir().unwrap();
+        write(d.path(), "entries.json", "{\"entries\":[111]}", None).unwrap();
+        let s1 = stat(d.path(), "entries.json").unwrap().unwrap();
+        write(d.path(), "entries.json", "{\"entries\":[222]}", None).unwrap();
+        let s2 = stat(d.path(), "entries.json").unwrap().unwrap();
+        assert_eq!(s1.size, s2.size);
+        assert_ne!(s1.hash, s2.hash);
+        let coarse = Stamp {
+            mtime_us: s1.mtime_us,
+            ctime_us: s1.ctime_us,
+            ino: s1.ino.clone(),
+            ..s2.clone()
+        };
+        assert_ne!(s1, coarse);
+        assert_eq!(
+            write(d.path(), "entries.json", "x", Some(Some(s1))).unwrap_err(),
+            CONFLICT
+        );
+        // and the same content stays the same stamp
+        assert_eq!(stat(d.path(), "entries.json").unwrap().unwrap(), s2);
+    }
+
+    #[test]
+    fn a_stamp_from_an_older_page_without_a_hash_still_parses() {
+        let s: Stamp =
+            serde_json::from_str(r#"{"size":1,"mtimeUs":2,"ctimeUs":3,"ino":"4"}"#).unwrap();
+        assert_eq!(s.hash, "");
+    }
+
+    #[test]
     fn two_writers_with_compare_and_swap_and_retry_lose_nothing() {
         let d = tempfile::tempdir().unwrap();
         write(d.path(), "entries.json", "{\"entries\":[]}", Some(None)).unwrap();
@@ -1797,6 +1863,7 @@ mod tests {
                 mtime_us,
                 ctime_us: (next() % 4_000_000_000_000_000) as i64,
                 ino: (next() >> 1).to_string(),
+                hash: format!("{:016x}", next()),
             };
             let through_js: serde_json::Value =
                 serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
@@ -1813,8 +1880,16 @@ mod tests {
             mtime_us: 1_760_000_000_000_000,
             ctime_us: 1_760_000_000_000_000,
             ino: "5".into(),
+            hash: "00".into(),
         };
         assert_eq!(a, a.clone());
+        assert_ne!(
+            a,
+            Stamp {
+                hash: "01".into(),
+                ..a.clone()
+            }
+        );
         assert_ne!(
             a,
             Stamp {

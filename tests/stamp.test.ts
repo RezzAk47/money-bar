@@ -17,6 +17,6 @@ describe('stamps are exact integers', () => {
   it('1 microsecond, 1 byte or another inode make a different stamp', () => {
     const a: FileStamp = { size: 10, mtimeUs: 1_760_000_000_000_000, ctimeUs: 1_760_000_000_000_000, ino: '5' };
     expect(sameStamp(a, { ...a })).toBe(true); expect(sameStamp(a, null)).toBe(false); expect(sameStamp(null, null)).toBe(true);
-    for (const o of [{ mtimeUs: a.mtimeUs + 1 }, { ctimeUs: a.ctimeUs + 1 }, { size: 11 }, { ino: '6' }]) expect(sameStamp(a, { ...a, ...o })).toBe(false);
+    for (const o of [{ mtimeUs: a.mtimeUs + 1 }, { ctimeUs: a.ctimeUs + 1 }, { size: 11 }, { ino: '6' }, { hash: 'ab' }]) expect(sameStamp(a, { ...a, ...o })).toBe(false);
   });
 });

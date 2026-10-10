@@ -1,5 +1,5 @@
 /** Whole microseconds since the epoch (integers, exact through JSON) and the inode as a decimal string. */
-export interface FileStamp { size: number; mtimeUs: number; ctimeUs: number; ino: string }
+export interface FileStamp { size: number; mtimeUs: number; ctimeUs: number; ino: string; hash?: string }
 
 /** Thrown by `write` when the file changed since the stamp it was told to expect (somebody else wrote it). */
 export class ConflictError extends Error {
@@ -25,7 +25,7 @@ export interface FileIO {
   removeStrayTemps(olderThanSec: number): Promise<number>;
 }
 export const sameStamp = (a: FileStamp | null, b: FileStamp | null): boolean =>
-  a === b || (a !== null && b !== null && a.size === b.size && a.mtimeUs === b.mtimeUs && a.ctimeUs === b.ctimeUs && a.ino === b.ino);
+  a === b || (a !== null && b !== null && a.size === b.size && a.mtimeUs === b.mtimeUs && a.ctimeUs === b.ctimeUs && a.ino === b.ino && (a.hash ?? '') === (b.hash ?? ''));
 
 /** Runs async jobs one after the other, so two clicks never interleave their load-modify-save steps. */
 export class Queue {
