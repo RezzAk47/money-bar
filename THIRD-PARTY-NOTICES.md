@@ -9,9 +9,9 @@ The Rust crate list was regenerated on 2026-10-10 from `src-tauri/Cargo.lock` wi
 (aarch64-apple-darwin, x86_64-apple-darwin, x86_64-pc-windows-msvc, x86_64-unknown-linux-gnu), following every normal and
 build dependency edge from the app crate (development dependencies and platform-filtered-out crates excluded) and taking
 the union. `cargo about` was not used (not installed here). The frontend table comes from the installed `node_modules`
-package files (checked 2026-10-09). The list gives the SPDX licence each crate declares. It is not legal advice. Full licence
-texts are in each crate's source on crates.io; to produce a single file with every text, run `cargo about` before a real
-release.
+package files (checked 2026-10-09). The list gives the SPDX licence each crate declares. It is not legal advice. The full licence texts of all of them, grouped by identical text, are in
+[`THIRD-PARTY-LICENSES.txt`](THIRD-PARTY-LICENSES.txt) (regenerate with `python3 scripts/gen-licenses.py`; it is also bundled into the
+installed app as a resource). A few crates ship no licence file in their source; the file lists them at its end.
 
 ## Frontend (bundled into the app window)
 
