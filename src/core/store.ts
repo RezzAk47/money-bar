@@ -229,26 +229,36 @@ export class MoneyStore {
   /** True when written, false when it could not be, 'conflict' when somebody else wrote the file since this app last read it. */
   async save(): Promise<boolean | 'conflict'> {
     if (this.loadError !== null) return false;
+    const text = entriesText(this.entries);
+    const out = this.serialize();
     try {
       // Rolling backup: keep the last file that decoded fine before replacing it, but only when the entries are about to
       // change (a settings tap leaves the backup alone). A failed backup never stops the save, and a file that does not
       // decode never replaces a good backup. A file exactly as this app last loaded or wrote it is known good.
-      const text = entriesText(this.entries);
       if (this.persistedText !== text) await this.backupOld();
       // compare-and-swap: the write goes through only if the file still has the stamp this app last saw (undefined: never read)
-      await this.io.write(ENTRIES_FILE, this.serialize(), this.lastStamp);
-      this.lastStamp = await this.io.stat(ENTRIES_FILE);
-      this.persistedText = text;
-      this.saveError = null;
-      this.dirty = true;
-      return true;
+      await this.io.write(ENTRIES_FILE, out, this.lastStamp);
     } catch (e) {
       if (isConflict(e)) { this.conflicts++; return 'conflict'; }
-      try { await this.io.removeStrayTemps(0); } catch { /* ignore */ }
-      this.saveError = errText(e);
-      this.dirty = true;
-      return false;
+      // The reply can fail after the file was replaced (the 5 second limit on a slow disk, a lost reply). If the file now holds
+      // exactly this save, it happened: reporting a failure would undo it on screen while it is on disk, and a second Add would
+      // then add it twice.
+      if (!(await this.landed(out))) {
+        try { await this.io.removeStrayTemps(0); } catch { /* ignore */ }
+        this.saveError = errText(e);
+        this.dirty = true;
+        return false;
+      }
     }
+    // Written. A failed stat afterwards does not undo that: an unknown stamp makes the next edit read the file again first.
+    try { this.lastStamp = await this.io.stat(ENTRIES_FILE); } catch { this.lastStamp = undefined; }
+    this.persistedText = text;
+    this.saveError = null;
+    this.dirty = true;
+    return true;
+  }
+  private async landed(out: string): Promise<boolean> {
+    try { return (await this.io.read(ENTRIES_FILE)) === out; } catch { return false; }
   }
   private async backupOld(): Promise<void> {
     try {

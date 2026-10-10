@@ -1,7 +1,11 @@
 // Inputs found by a hostile review (2026-10-10): each one broke the app before its fix.
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { decodeMoneyFile, uniqueIds } from '../src/core/model';
 import type { Entry } from '../src/core/model';
+import { MoneyStore } from '../src/core/store';
+import { Clock, nodeIO, noon, tmpDir } from './helpers';
 
 const X = 'AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE';
 const entry = (id: string, i: number): Entry => ({ id, kind: 'expense', cents: 100 + i, category: 'Food', note: '', day: '2026-10-01', created: 1_760_000_000 + i, sample: false });
@@ -19,6 +23,45 @@ describe('duplicate ids in a hand-edited file', () => {
     const out = uniqueIds(list);
     expect(new Set(out.map((e) => e.id)).size).toBe(600);
     expect(uniqueIds(list).map((e) => e.id)).toEqual(out.map((e) => e.id));
+  });
+});
+
+describe('a save that reached the disk but was reported as failed', () => {
+  async function store() {
+    const dir = tmpDir(), io = nodeIO(dir);
+    const s = new MoneyStore({ io, nowProvider: new Clock(noon('2026-10-06')).now, timeZone: 'UTC' });
+    await s.init();
+    return { s, io, file: path.join(dir, 'entries.json') };
+  }
+  it('the file was written, then the stat after it failed: the add counts, and the next add does not double it', async () => {
+    const { s, io, file } = await store();
+    const realWrite = io.write.bind(io), realStat = io.stat.bind(io);
+    let failNextStat = false;
+    io.write = async (n, t, e) => { await realWrite(n, t, e); if (n === 'entries.json') failNextStat = true; };
+    io.stat = async (n) => { if (failNextStat) { failNextStat = false; throw new Error('the file did not answer in time'); } return realStat(n); };
+    expect(await s.add('expense', 1450, 'Food', 'lunch', '2026-10-06')).toBeNull(); // used to be "Could not save: ..."
+    expect(s.entries).toHaveLength(1); // used to be 0 while the file had 1, so the user typed it again
+    expect(s.saveError).toBeNull();
+    expect(decodeMoneyFile(fs.readFileSync(file, 'utf8')).entries).toHaveLength(1);
+    expect(await s.add('expense', 200, 'Food', 'later', '2026-10-06')).toBeNull();
+    expect(decodeMoneyFile(fs.readFileSync(file, 'utf8')).entries.map((e) => e.cents).sort()).toEqual([1450, 200].sort());
+  });
+  it('the write call failed after the file was replaced (the reply was lost): what is on disk is ours, so it counts', async () => {
+    const { s, io, file } = await store();
+    const realWrite = io.write.bind(io);
+    io.write = async (n, t, e) => { await realWrite(n, t, e); if (n === 'entries.json') throw 'the file did not answer in time'; };
+    expect(await s.add('expense', 999, 'Food', '', '2026-10-06')).toBeNull();
+    expect(s.entries).toHaveLength(1);
+    io.write = realWrite;
+    expect(await s.add('expense', 1, 'Food', '', '2026-10-06')).toBeNull();
+    expect(decodeMoneyFile(fs.readFileSync(file, 'utf8')).entries).toHaveLength(2);
+  });
+  it('a write that really failed is still reported and undone', async () => {
+    const { s, io, file } = await store();
+    io.failWrites = true;
+    expect(await s.add('expense', 999, 'Food', '', '2026-10-06')).toContain('Could not save');
+    expect(s.entries).toHaveLength(0);
+    expect(decodeMoneyFile(fs.readFileSync(file, 'utf8')).entries).toHaveLength(0);
   });
 });
 
