@@ -109,33 +109,33 @@ describe('rolling and daily backups', () => {
     await s.tick(); expect(s.loadError).toBeTruthy(); expect(read(f('entries.backup.json'))).toBe(good);
   });
   it('one daily backup: the first change of a local day only', async () => {
-    const real = Civil_today();
-    const { s, f, clock } = await mk({ start: real }); clock.ms = Date.now(); await s.add('expense', 100, 'Food', 'a', real);
+    const real = day;
+    const { s, f, clock } = await mk({ start: real }); await s.add('expense', 100, 'Food', 'a', real);
     expect(fs.existsSync(f('entries.backup-daily.json'))).toBe(true);
+    const sameDay = new Date(clock.ms); fs.utimesSync(f('entries.backup-daily.json'), sameDay, sameDay); // the file's real mtime is not the injected clock's day
     await s.add('expense', 200, 'Food', 'b', real);
     expect(decodeMoneyFile(read(f('entries.backup-daily.json'))).entries).toHaveLength(0); // still the first one of the day
     // another day: age the daily file by a day, then move the clock
-    const old = new Date(Date.now() - 86400_000 * 2); fs.utimesSync(f('entries.backup-daily.json'), old, old);
+    const old = new Date(clock.ms - 86400_000 * 2); fs.utimesSync(f('entries.backup-daily.json'), old, old);
     await s.add('expense', 300, 'Food', 'c', real);
     expect(decodeMoneyFile(read(f('entries.backup-daily.json'))).entries).toHaveLength(2);
   });
 });
 describe('daily backup and a clock that moved', () => {
   it('a daily backup dated in the future (the clock jumped back) is not rewritten on every save and keeps the older good snapshot', async () => {
-    const real = Civil_today();
-    const { s, f, clock } = await mk({ start: real }); clock.ms = Date.now();
+    const real = day;
+    const { s, f, clock } = await mk({ start: real });
     await s.add('expense', 100, 'Food', 'a', real); await s.add('expense', 200, 'Food', 'b', real);
     const snapshot = read(f('entries.backup-daily.json'));
-    const future = new Date(Date.now() + 5 * 86400_000); fs.utimesSync(f('entries.backup-daily.json'), future, future);
+    const future = new Date(clock.ms + 5 * 86400_000); fs.utimesSync(f('entries.backup-daily.json'), future, future);
     for (let i = 0; i < 5; i++) await s.add('expense', 300 + i, 'Food', 'later' + i, real);
     expect(read(f('entries.backup-daily.json'))).toBe(snapshot);
     // the day catches up: the next change after that day starts a new snapshot
-    const past = new Date(Date.now() - 2 * 86400_000); fs.utimesSync(f('entries.backup-daily.json'), past, past);
+    const past = new Date(clock.ms - 2 * 86400_000); fs.utimesSync(f('entries.backup-daily.json'), past, past);
     await s.add('expense', 999, 'Food', 'new day', real);
     expect(decodeMoneyFile(read(f('entries.backup-daily.json'))).entries.length).toBeGreaterThan(decodeMoneyFile(snapshot).entries.length);
   });
 });
-function Civil_today(): string { return new Date().toISOString().slice(0, 10); }
 
 describe('categories and budgets in the store', () => {
   it('custom categories, debt reserved, orphans', async () => {
