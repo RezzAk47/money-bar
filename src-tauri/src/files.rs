@@ -413,6 +413,7 @@ fn rename_retry(from: &Path, to: &Path) -> std::io::Result<()> {
     Err(last.unwrap_or_else(|| std::io::Error::other("rename failed")))
 }
 
+#[cfg(test)]
 pub fn write(
     dir: &Path,
     name: &str,
@@ -420,6 +421,49 @@ pub fn write(
     check: Option<Option<Stamp>>,
 ) -> Result<(), String> {
     write_with_hook(dir, name, text, check, &mut || {})
+}
+
+/// Lets the caller that gave up waiting for a write stop it before it changes anything: the write commits (renames) only through
+/// `gate`, which holds a lock, so "cancelled" and "committed" can never both happen.
+pub struct Cancel {
+    cancelled: std::sync::Mutex<bool>,
+}
+impl Cancel {
+    pub fn new() -> Cancel {
+        Cancel {
+            cancelled: std::sync::Mutex::new(false),
+        }
+    }
+    /// After this returns, no commit is running and none will start (waits for one that already began).
+    pub fn cancel(&self) {
+        *self.cancelled.lock().unwrap_or_else(|e| e.into_inner()) = true;
+    }
+    fn gate<R>(&self, f: impl FnOnce() -> R) -> Option<R> {
+        let c = self.cancelled.lock().unwrap_or_else(|e| e.into_inner());
+        if *c {
+            None
+        } else {
+            Some(f())
+        }
+    }
+}
+impl Default for Cancel {
+    fn default() -> Self {
+        Cancel::new()
+    }
+}
+
+pub const CANCELLED: &str = "the save timed out, so nothing was written";
+
+/// `write` that stops cleanly (nothing renamed, temp file removed) when `cancel` fires before the final rename.
+pub fn write_cancellable(
+    dir: &Path,
+    name: &str,
+    text: &str,
+    check: Option<Option<Stamp>>,
+    cancel: &Cancel,
+) -> Result<(), String> {
+    write_inner(dir, name, text, check, &mut || {}, cancel)
 }
 
 /// `write`, with a hook that runs after the content is on disk and before the final check and rename: tests use it to swap
@@ -431,13 +475,25 @@ pub fn write(
 ///   is on the same filesystem, otherwise next to the (validated) target; `recheck_link` runs right before the rename.
 /// * A link under any other name (the backups) is replaced by a regular file; its target is never touched.
 // on Windows the block below clears only the read-only attribute, of this call's own temp file (clippy flags every set_readonly(false))
-#[allow(clippy::permissions_set_readonly_false)]
+#[cfg(test)]
 pub fn write_with_hook(
     dir: &Path,
     name: &str,
     text: &str,
     check: Option<Option<Stamp>>,
     hook: &mut dyn FnMut(),
+) -> Result<(), String> {
+    write_inner(dir, name, text, check, hook, &Cancel::new())
+}
+
+#[allow(clippy::permissions_set_readonly_false)]
+fn write_inner(
+    dir: &Path,
+    name: &str,
+    text: &str,
+    check: Option<Option<Stamp>>,
+    hook: &mut dyn FnMut(),
+    cancel: &Cancel,
 ) -> Result<(), String> {
     resolve(dir, name)?;
     fs::create_dir_all(dir).map_err(|e| format!("cannot create the data folder: {e}"))?;
@@ -525,7 +581,10 @@ pub fn write_with_hook(
         if let Some(f) = &followed {
             recheck_link(&p, name, f)?;
         }
-        rename_retry(&tmp, &dest).map_err(io)?;
+        match cancel.gate(|| rename_retry(&tmp, &dest)) {
+            Some(r) => r.map_err(io)?,
+            None => return Err(CANCELLED.into()),
+        }
         #[cfg(unix)]
         {
             if let Ok(d) = fs::File::open(dest.parent().unwrap_or(&base)) {

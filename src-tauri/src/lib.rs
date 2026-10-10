@@ -85,20 +85,34 @@ fn app_info(state: State<AppState>) -> AppInfo {
 }
 
 /// Runs a file operation on its own thread and gives up after `limit`, so nothing a file does can freeze the tray or the popup.
+/// The operation gets a `Cancel`: a write passes it to `files::write_cancellable`, and when the limit passes first the write
+/// is told to stop before its final rename, so a save the page was told timed out can never land afterwards. If the rename was
+/// already under way, the timeout waits for it and reports its real result.
 fn off_main_for<T: Send + 'static>(
     limit: Duration,
-    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+    f: impl FnOnce(&files::Cancel) -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
     let (tx, rx) = std::sync::mpsc::channel();
+    let cancel = std::sync::Arc::new(files::Cancel::new());
+    let theirs = cancel.clone();
     std::thread::spawn(move || {
-        let _ = tx.send(f());
+        let _ = tx.send(f(&theirs));
     });
-    rx.recv_timeout(limit)
-        .unwrap_or_else(|_| Err("the file did not answer in time".into()))
+    match rx.recv_timeout(limit) {
+        Ok(r) => r,
+        Err(_) => {
+            // blocks only while a rename is in flight; afterwards the thread either finished its commit or will refuse to start it
+            cancel.cancel();
+            match rx.recv_timeout(Duration::from_millis(50)) {
+                Ok(r) => r,
+                Err(_) => Err("the file did not answer in time".into()),
+            }
+        }
+    }
 }
 
 fn off_main<T: Send + 'static>(
-    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+    f: impl FnOnce(&files::Cancel) -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
     off_main_for(Duration::from_secs(5), f)
 }
@@ -106,13 +120,13 @@ fn off_main<T: Send + 'static>(
 #[tauri::command]
 async fn fs_read(state: State<'_, AppState>, name: String) -> Result<Option<String>, String> {
     let dir = state.data_dir.clone();
-    off_main(move || files::read(&dir, &name))
+    off_main(move |_| files::read(&dir, &name))
 }
 
 #[tauri::command]
 async fn fs_stat(state: State<'_, AppState>, name: String) -> Result<Option<files::Stamp>, String> {
     let dir = state.data_dir.clone();
-    off_main(move || files::stat(&dir, &name))
+    off_main(move |_| files::stat(&dir, &name))
 }
 
 #[tauri::command]
@@ -125,12 +139,13 @@ async fn fs_write(
 ) -> Result<(), String> {
     // check = false: write without comparing; check = true with expected None: the file must not exist; with a stamp: it must still match
     let dir = state.data_dir.clone();
-    off_main(move || {
-        files::write(
+    off_main(move |cancel| {
+        files::write_cancellable(
             &dir,
             &name,
             &text,
             if check { Some(expected) } else { None },
+            cancel,
         )
     })
 }
@@ -142,13 +157,13 @@ async fn fs_move_aside(
     backup_name: String,
 ) -> Result<String, String> {
     let dir = state.data_dir.clone();
-    off_main(move || files::move_aside(&dir, &name, &backup_name))
+    off_main(move |_| files::move_aside(&dir, &name, &backup_name))
 }
 
 #[tauri::command]
 async fn fs_clean_temps(state: State<'_, AppState>, older_than_sec: u64) -> Result<usize, String> {
     let dir = state.data_dir.clone();
-    off_main(move || Ok(files::remove_stray_temps(&dir, older_than_sec)))
+    off_main(move |_| Ok(files::remove_stray_temps(&dir, older_than_sec)))
 }
 
 /// The CSV export. The native save dialog is opened HERE, by this command: the page supplies only the text and a suggested
@@ -478,7 +493,7 @@ mod shell_tests {
     #[test]
     fn a_stuck_file_operation_does_not_block_the_caller() {
         let started = std::time::Instant::now();
-        let r: Result<u8, String> = off_main_for(Duration::from_millis(100), || {
+        let r: Result<u8, String> = off_main_for(Duration::from_millis(100), |_| {
             std::thread::sleep(Duration::from_secs(3)); // a lock wait, a slow disk
             Ok(1)
         });
@@ -492,12 +507,52 @@ mod shell_tests {
     #[test]
     fn a_quick_file_operation_returns_its_value() {
         assert_eq!(
-            off_main_for(Duration::from_secs(2), || Ok::<_, String>(7)),
+            off_main_for(Duration::from_secs(2), |_| Ok::<_, String>(7)),
             Ok(7)
         );
         assert_eq!(
-            off_main_for::<u8>(Duration::from_secs(2), || Err("disk full".into())),
+            off_main_for::<u8>(Duration::from_secs(2), |_| Err("disk full".into())),
             Err("disk full".to_string())
+        );
+    }
+
+    #[test]
+    fn a_save_that_timed_out_never_lands_afterwards() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().to_path_buf();
+        let dir2 = dir.clone();
+        let r = off_main_for(Duration::from_millis(100), move |cancel| {
+            std::thread::sleep(Duration::from_millis(400)); // a slow disk before the final rename
+            files::write_cancellable(&dir2, "entries.json", "late", None, cancel)
+        });
+        assert!(r.is_err(), "the page is told it timed out");
+        std::thread::sleep(Duration::from_millis(700));
+        assert_eq!(
+            files::read(&dir, "entries.json").unwrap(),
+            None,
+            "so the write must not land after that"
+        );
+        let leftovers: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().collect();
+        assert!(
+            leftovers
+                .iter()
+                .all(|e| !e.file_name().to_string_lossy().contains(".tmp")),
+            "no temp file is left"
+        );
+    }
+
+    #[test]
+    fn a_save_that_finishes_in_time_still_lands() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().to_path_buf();
+        let d2 = dir.clone();
+        off_main_for(Duration::from_secs(5), move |c| {
+            files::write_cancellable(&d2, "entries.json", "on time", None, c)
+        })
+        .unwrap();
+        assert_eq!(
+            files::read(&dir, "entries.json").unwrap().as_deref(),
+            Some("on time")
         );
     }
 
