@@ -88,7 +88,10 @@ html[data-style=glass] .card { border: 1px solid color-mix(in srgb, var(--text) 
 .amount-row { flex-wrap: nowrap; }
 .amount { flex: 1; min-width: 0; display: flex; align-items: center; background: var(--field); border: 1px solid var(--field-border); border-radius: 10px; padding-inline: 10px; }
 .amount .sym { color: var(--text2); margin-inline-end: 4px; font-size: 16px; }
-.amount input { border: 0; background: transparent; width: 100%; font-size: 20px; font-weight: 600; padding: 6px 0; outline-offset: 6px; }
+.amount input { border: 0; background: transparent; width: 100%; font-size: 20px; font-weight: 600; padding: 6px 0; }
+/* The focus ring goes around the whole field (symbol + input), not around the bare input, which looked offset and larger than the box. */
+.amount input:focus-visible { outline: none; }
+.amount:focus-within { outline: 2px solid var(--tips-t); outline-offset: 2px; }
 .catpick select { min-width: 110px; }
 input.date { width: 150px; }
 
