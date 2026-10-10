@@ -3,6 +3,7 @@
 // "toString" are ordinary own keys. Strict on purpose: trailing commas, comments, single quotes and NaN are errors with a
 // position (Foundation tolerates a trailing comma; this app reports it and, like any unreadable file, never overwrites it).
 const MAX_DEPTH = 512;
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 export function parseJson(text: string): unknown {
   let i = 0;
@@ -15,7 +16,13 @@ export function parseJson(text: string): unknown {
     for (;;) {
       if (i >= n) return fail('Unterminated string, end of text');
       const c = text.charCodeAt(i);
-      if (c === 34) { out += text.slice(start, i); i++; return out; }
+      if (c === 34) {
+        out += text.slice(start, i);
+        // A "\uD800"-style escape without its other half is not a character: the page could show it but never save it (the Rust
+        // side cannot take it), and Foundation refuses it too. Raw text from the file is UTF-8, so only an escape can make one.
+        if (LONE_SURROGATE.test(out)) return fail('Lone surrogate in a \\u escape (not a character)');
+        i++; return out;
+      }
       if (c < 32) return fail('Bad control character in string');
       if (c === 92) {
         out += text.slice(start, i); i++;

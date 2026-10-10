@@ -494,6 +494,18 @@ mod shell_tests {
         );
     }
 
+    /// Why the page refuses a lone surrogate escape in entries.json (src/core/jsonparse.ts): the page sends command arguments as
+    /// JSON.stringify output, which writes a lone surrogate as "\ud800", and serde_json cannot make a Rust String of it, so a
+    /// file holding one could be shown but never saved.
+    #[test]
+    fn a_lone_surrogate_from_the_page_cannot_become_a_rust_string() {
+        assert!(serde_json::from_str::<String>(r#""a\ud800b""#).is_err());
+        assert_eq!(
+            serde_json::from_str::<String>(r#""😀""#).unwrap(),
+            "\u{1F600}"
+        );
+    }
+
     /// WCAG relative luminance of an sRGB channel triple.
     fn luminance(r: u8, g: u8, b: u8) -> f64 {
         let lin = |c: u8| {
