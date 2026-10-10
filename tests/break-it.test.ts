@@ -6,6 +6,7 @@ import { decodeMoneyFile, uniqueIds } from '../src/core/model';
 import type { Entry } from '../src/core/model';
 import { MoneyStore } from '../src/core/store';
 import { parseMoney } from '../src/core/money';
+import { ConflictError } from '../src/core/io';
 import { Clock, nodeIO, noon, tmpDir } from './helpers';
 
 const X = 'AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE';
@@ -63,6 +64,37 @@ describe('a save that reached the disk but was reported as failed', () => {
     expect(await s.add('expense', 999, 'Food', '', '2026-10-06')).toContain('Could not save');
     expect(s.entries).toHaveLength(0);
     expect(decodeMoneyFile(fs.readFileSync(file, 'utf8')).entries).toHaveLength(0);
+  });
+});
+
+describe('entries.json missing for a moment while a save is retried', () => {
+  // A sync tool (OneDrive, Dropbox, a network share) replaces the file by delete + create. When a save hit a conflict and the
+  // retry read the folder in the gap, load() took it for a first run: memory was wiped to an empty list and default settings,
+  // an empty file was written, and the change went on top of that, so the file kept ONE entry. The next save then rolled that
+  // file into entries.backup.json too.
+  it('keeps what is in memory and writes it back, as a vanished file is handled everywhere else', async () => {
+    const dir = tmpDir(), io = nodeIO(dir), file = path.join(dir, 'entries.json');
+    const s = new MoneyStore({ io, nowProvider: new Clock(noon('2026-10-06')).now, timeZone: 'UTC' });
+    await s.init();
+    for (const c of [100, 200, 300]) expect(await s.add('expense', c, 'Food', '', '2026-10-06')).toBeNull();
+    expect(await s.updateSettings((x) => { x.currencySymbol = '€'; })).toBeNull();
+    const realWrite = io.write.bind(io);
+    let first = true;
+    io.write = async (n, t, e) => {
+      if (first && n === 'entries.json') { first = false; fs.rmSync(file); throw new ConflictError(); } // gone between the two tries
+      return realWrite(n, t, e);
+    };
+    expect(await s.add('expense', 400, 'Food', '', '2026-10-06')).toBeNull();
+    const onDisk = decodeMoneyFile(fs.readFileSync(file, 'utf8'));
+    expect(onDisk.entries.map((e) => e.cents).sort((a, b) => a - b)).toEqual([100, 200, 300, 400]);
+    expect(onDisk.settings.currencySymbol).toBe('€');
+    expect(s.entries).toHaveLength(4);
+  });
+  it('a real first run (no file, nothing loaded yet) still starts empty and creates the file', async () => {
+    const dir = tmpDir();
+    const s = new MoneyStore({ io: nodeIO(dir), nowProvider: new Clock(noon('2026-10-06')).now, timeZone: 'UTC' });
+    await s.init();
+    expect(decodeMoneyFile(fs.readFileSync(path.join(dir, 'entries.json'), 'utf8')).entries).toEqual([]);
   });
 });
 

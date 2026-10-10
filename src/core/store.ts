@@ -69,6 +69,8 @@ export class MoneyStore {
   private extraTop: Extra | undefined;
   private extraSettings: Extra | undefined;
   private persistedText: string | null = null;
+  /** True once entries.json was decoded or written by this store: from then on a missing file is never a first run. */
+  private loaded = false;
   private rev = 0;
   private dirty = false;
   private queue = new Queue();
@@ -198,8 +200,14 @@ export class MoneyStore {
       this.entries = []; this.loadError = errText(e); this.lastStamp = undefined; this.touch();
       return;
     }
+    if (text === null && this.loaded && this.loadError === null) {
+      // The file was read before and is gone now (a sync tool replacing it by delete + create, read in the gap by a conflict
+      // retry): as in reloadIfChanged, memory stays and the next save writes it back. Never an empty restart over real data.
+      this.lastStamp = null;
+      return;
+    }
     if (text === null) {
-      // First run only: start empty and create the file. (reloadIfChanged never calls load for a missing file.)
+      // First run only: start empty and create the file.
       this.entries = []; this.settings = defaultSettings(); this.loadError = null; this.extraTop = this.extraSettings = undefined; this.persistedText = null;
       this.lastStamp = null; // the file must still not exist when it is created
       this.touch();
@@ -214,6 +222,7 @@ export class MoneyStore {
       this.persistedText = entriesText(file.entries);
       this.fileVersion = file.version;
       this.extraTop = file.extraTop; this.extraSettings = file.extraSettings;
+      this.loaded = true;
     } catch (e) {
       this.entries = []; // the settings in memory stay
       this.loadError = e instanceof DecodeError ? e.message : `entries.json could not be read (${(e as Error).message})`;
@@ -254,6 +263,7 @@ export class MoneyStore {
     try { this.lastStamp = await this.io.stat(ENTRIES_FILE); } catch { this.lastStamp = undefined; }
     this.persistedText = text;
     this.saveError = null;
+    this.loaded = true;
     this.dirty = true;
     return true;
   }
