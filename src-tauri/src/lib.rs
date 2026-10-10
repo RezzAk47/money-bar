@@ -58,10 +58,11 @@ fn env_var(name: &str) -> Option<String> {
     std::env::var(name).ok()
 }
 
-fn home_dir() -> String {
+/// The home folder, or None when neither HOME nor USERPROFILE is set to something (never "." or the current folder).
+fn home_dir() -> Option<String> {
     env_var("HOME")
-        .or_else(|| env_var("USERPROFILE"))
-        .unwrap_or_else(|| ".".into())
+        .filter(|h| !h.trim().is_empty())
+        .or_else(|| env_var("USERPROFILE").filter(|h| !h.trim().is_empty()))
 }
 
 #[tauri::command]
@@ -376,7 +377,13 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 
 pub fn run() {
     let os = Os::current();
-    let data_dir = datadir::default_data_dir(os, &env_var, &home_dir());
+    let data_dir = match datadir::default_data_dir(os, &env_var, home_dir().as_deref()) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("Money Bar cannot start: {e}");
+            std::process::exit(1);
+        }
+    };
 
     let mut builder = tauri::Builder::default();
     #[cfg(desktop)]

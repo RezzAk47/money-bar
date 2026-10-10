@@ -53,31 +53,45 @@ fn is_absolute(p: &str, os: Os) -> bool {
 /// 1. MONEYBAR_DATA_DIR (every test and manual run sets it)
 /// 2. macOS ~/Library/Application Support/MoneyBar, Windows %APPDATA%\MoneyBar,
 ///    Linux ${XDG_DATA_HOME:-~/.local/share}/MoneyBar (an XDG_DATA_HOME that is not absolute is ignored).
-pub fn default_data_dir(os: Os, env: &dyn Fn(&str) -> Option<String>, home: &str) -> PathBuf {
+///
+/// `home` is None (or blank) when the OS gave no home folder; that is an error unless the answer does not need it
+/// (an override, an absolute XDG_DATA_HOME, or APPDATA on Windows). It never falls back to the current folder.
+pub fn default_data_dir(
+    os: Os,
+    env: &dyn Fn(&str) -> Option<String>,
+    home: Option<&str>,
+) -> Result<PathBuf, String> {
     if let Some(o) = env("MONEYBAR_DATA_DIR") {
         if !o.trim().is_empty() {
-            return PathBuf::from(o);
+            return Ok(PathBuf::from(o));
         }
     }
     let sep = if os == Os::Windows { '\\' } else { '/' };
-    let h = trim_end(home, sep);
+    let home = home.filter(|h| !h.trim().is_empty());
+    let need_home = || {
+        home.map(|h| trim_end(h, sep).to_string()).ok_or_else(|| {
+            "cannot find the home folder (HOME / USERPROFILE is not set): set MONEYBAR_DATA_DIR to choose where Money Bar keeps its data"
+                .to_string()
+        })
+    };
     let s = match os {
-        Os::Mac => format!("{h}/Library/Application Support/MoneyBar"),
+        Os::Mac => format!("{}/Library/Application Support/MoneyBar", need_home()?),
         Os::Windows => {
-            let appdata = env("APPDATA")
-                .filter(|a| !a.trim().is_empty())
-                .unwrap_or_else(|| format!("{h}\\AppData\\Roaming"));
+            let appdata = match env("APPDATA").filter(|a| !a.trim().is_empty()) {
+                Some(a) => a,
+                None => format!("{}\\AppData\\Roaming", need_home()?),
+            };
             format!("{}\\MoneyBar", trim_end(&appdata, '\\'))
         }
         Os::Linux => {
             let base = match env("XDG_DATA_HOME") {
                 Some(x) if is_absolute(&x, Os::Linux) => trim_end(&x, '/').to_string(),
-                _ => format!("{h}/.local/share"),
+                _ => format!("{}/.local/share", need_home()?),
             };
             format!("{base}/MoneyBar")
         }
     };
-    PathBuf::from(s)
+    Ok(PathBuf::from(s))
 }
 
 #[cfg(test)]
@@ -96,7 +110,7 @@ mod tests {
     #[test]
     fn mac() {
         assert_eq!(
-            default_data_dir(Os::Mac, &env(&[]), "/Users/ann"),
+            default_data_dir(Os::Mac, &env(&[]), Some("/Users/ann")).unwrap(),
             PathBuf::from("/Users/ann/Library/Application Support/MoneyBar")
         );
     }
@@ -105,16 +119,16 @@ mod tests {
     fn windows_uses_appdata_then_profile() {
         let e = env(&[("APPDATA", "C:\\Users\\Ann\\AppData\\Roaming")]);
         assert_eq!(
-            default_data_dir(Os::Windows, &e, "C:\\Users\\Ann"),
+            default_data_dir(Os::Windows, &e, Some("C:\\Users\\Ann")).unwrap(),
             PathBuf::from("C:\\Users\\Ann\\AppData\\Roaming\\MoneyBar")
         );
         let e = env(&[("APPDATA", "C:\\Users\\Ann\\AppData\\Roaming\\")]);
         assert_eq!(
-            default_data_dir(Os::Windows, &e, "C:\\Users\\Ann"),
+            default_data_dir(Os::Windows, &e, Some("C:\\Users\\Ann")).unwrap(),
             PathBuf::from("C:\\Users\\Ann\\AppData\\Roaming\\MoneyBar")
         );
         assert_eq!(
-            default_data_dir(Os::Windows, &env(&[]), "C:\\Users\\Ann"),
+            default_data_dir(Os::Windows, &env(&[]), Some("C:\\Users\\Ann")).unwrap(),
             PathBuf::from("C:\\Users\\Ann\\AppData\\Roaming\\MoneyBar")
         );
     }
@@ -122,27 +136,34 @@ mod tests {
     #[test]
     fn linux_uses_xdg_when_absolute() {
         assert_eq!(
-            default_data_dir(Os::Linux, &env(&[]), "/home/ann"),
+            default_data_dir(Os::Linux, &env(&[]), Some("/home/ann")).unwrap(),
             PathBuf::from("/home/ann/.local/share/MoneyBar")
         );
         assert_eq!(
             default_data_dir(
                 Os::Linux,
                 &env(&[("XDG_DATA_HOME", "/data/xdg")]),
-                "/home/ann"
-            ),
+                Some("/home/ann")
+            )
+            .unwrap(),
             PathBuf::from("/data/xdg/MoneyBar")
         );
         assert_eq!(
             default_data_dir(
                 Os::Linux,
                 &env(&[("XDG_DATA_HOME", "relative/dir")]),
-                "/home/ann"
-            ),
+                Some("/home/ann")
+            )
+            .unwrap(),
             PathBuf::from("/home/ann/.local/share/MoneyBar")
         );
         assert_eq!(
-            default_data_dir(Os::Linux, &env(&[("XDG_DATA_HOME", "")]), "/home/ann/"),
+            default_data_dir(
+                Os::Linux,
+                &env(&[("XDG_DATA_HOME", "")]),
+                Some("/home/ann/")
+            )
+            .unwrap(),
             PathBuf::from("/home/ann/.local/share/MoneyBar")
         );
     }
@@ -151,13 +172,39 @@ mod tests {
     fn override_wins_everywhere() {
         for os in [Os::Mac, Os::Windows, Os::Linux] {
             assert_eq!(
-                default_data_dir(os, &env(&[("MONEYBAR_DATA_DIR", "/tmp/x")]), "/h"),
+                default_data_dir(os, &env(&[("MONEYBAR_DATA_DIR", "/tmp/x")]), Some("/h")).unwrap(),
                 PathBuf::from("/tmp/x")
             );
         }
         assert_eq!(
-            default_data_dir(Os::Linux, &env(&[("MONEYBAR_DATA_DIR", "  ")]), "/h"),
+            default_data_dir(Os::Linux, &env(&[("MONEYBAR_DATA_DIR", "  ")]), Some("/h")).unwrap(),
             PathBuf::from("/h/.local/share/MoneyBar")
+        );
+    }
+
+    #[test]
+    fn a_missing_home_is_an_error_not_the_current_folder() {
+        for os in [Os::Mac, Os::Windows, Os::Linux] {
+            for home in [None, Some(""), Some("  ")] {
+                let e = default_data_dir(os, &env(&[]), home).unwrap_err();
+                assert!(e.contains("MONEYBAR_DATA_DIR"), "{e}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_missing_home_is_fine_when_the_answer_does_not_need_it() {
+        assert_eq!(
+            default_data_dir(Os::Windows, &env(&[("APPDATA", "C:\\A")]), None).unwrap(),
+            PathBuf::from("C:\\A\\MoneyBar")
+        );
+        assert_eq!(
+            default_data_dir(Os::Linux, &env(&[("XDG_DATA_HOME", "/x")]), None).unwrap(),
+            PathBuf::from("/x/MoneyBar")
+        );
+        assert_eq!(
+            default_data_dir(Os::Mac, &env(&[("MONEYBAR_DATA_DIR", "/t")]), None).unwrap(),
+            PathBuf::from("/t")
         );
     }
 }
