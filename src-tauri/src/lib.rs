@@ -14,10 +14,15 @@ use serde::Serialize;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Rect as TauriRect, State, WebviewWindow, WindowEvent};
+use tauri::{
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Rect as TauriRect, State,
+    WebviewWindow, WindowEvent,
+};
 
 use datadir::Os;
-use position::{fallback_corner, popup_height_logical, popup_position, popup_width_logical, usable_icon, Rect};
+use position::{
+    fallback_corner, popup_height_logical, popup_position, popup_width_logical, usable_icon, Rect,
+};
 
 const MARGIN: i32 = 8;
 
@@ -54,7 +59,9 @@ fn env_var(name: &str) -> Option<String> {
 }
 
 fn home_dir() -> String {
-    env_var("HOME").or_else(|| env_var("USERPROFILE")).unwrap_or_else(|| ".".into())
+    env_var("HOME")
+        .or_else(|| env_var("USERPROFILE"))
+        .unwrap_or_else(|| ".".into())
 }
 
 #[tauri::command]
@@ -64,8 +71,10 @@ fn app_info(state: State<AppState>) -> AppInfo {
         platform: os.name(),
         data_dir: state.data_dir.display().to_string(),
         no_notifications: env_var("MONEYBAR_NO_NOTIFICATIONS").is_some(),
-        self_test: env_var("MONEYBAR_SELFTEST").is_some() && env_var("MONEYBAR_DATA_DIR").is_some_and(|d| !d.trim().is_empty()),
-        seed_sample: env_var("MONEYBAR_SEED_SAMPLE").is_some() && env_var("MONEYBAR_DATA_DIR").is_some_and(|d| !d.trim().is_empty()),
+        self_test: env_var("MONEYBAR_SELFTEST").is_some()
+            && env_var("MONEYBAR_DATA_DIR").is_some_and(|d| !d.trim().is_empty()),
+        seed_sample: env_var("MONEYBAR_SEED_SAMPLE").is_some()
+            && env_var("MONEYBAR_DATA_DIR").is_some_and(|d| !d.trim().is_empty()),
         tray_note: if os == Os::Linux {
             Some("Linux: tray icons cannot report clicks, so open Money Bar from the tray icon's menu (Show Money Bar). The window opens at the top right of the screen. On GNOME the AppIndicator extension is required.")
         } else {
@@ -75,15 +84,21 @@ fn app_info(state: State<AppState>) -> AppInfo {
 }
 
 /// Runs a file operation on its own thread and gives up after `limit`, so nothing a file does can freeze the tray or the popup.
-fn off_main_for<T: Send + 'static>(limit: Duration, f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+fn off_main_for<T: Send + 'static>(
+    limit: Duration,
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let _ = tx.send(f());
     });
-    rx.recv_timeout(limit).unwrap_or_else(|_| Err("the file did not answer in time".into()))
+    rx.recv_timeout(limit)
+        .unwrap_or_else(|_| Err("the file did not answer in time".into()))
 }
 
-fn off_main<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+fn off_main<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
     off_main_for(Duration::from_secs(5), f)
 }
 
@@ -100,14 +115,31 @@ async fn fs_stat(state: State<'_, AppState>, name: String) -> Result<Option<file
 }
 
 #[tauri::command]
-async fn fs_write(state: State<'_, AppState>, name: String, text: String, check: bool, expected: Option<files::Stamp>) -> Result<(), String> {
+async fn fs_write(
+    state: State<'_, AppState>,
+    name: String,
+    text: String,
+    check: bool,
+    expected: Option<files::Stamp>,
+) -> Result<(), String> {
     // check = false: write without comparing; check = true with expected None: the file must not exist; with a stamp: it must still match
     let dir = state.data_dir.clone();
-    off_main(move || files::write(&dir, &name, &text, if check { Some(expected) } else { None }))
+    off_main(move || {
+        files::write(
+            &dir,
+            &name,
+            &text,
+            if check { Some(expected) } else { None },
+        )
+    })
 }
 
 #[tauri::command]
-async fn fs_move_aside(state: State<'_, AppState>, name: String, backup_name: String) -> Result<String, String> {
+async fn fs_move_aside(
+    state: State<'_, AppState>,
+    name: String,
+    backup_name: String,
+) -> Result<String, String> {
     let dir = state.data_dir.clone();
     off_main(move || files::move_aside(&dir, &name, &backup_name))
 }
@@ -122,13 +154,19 @@ async fn fs_clean_temps(state: State<'_, AppState>, older_than_sec: u64) -> Resu
 /// file name, never a path, so a compromised page cannot choose where a file is written. The path the dialog returns is
 /// validated again in `files::run_export`. Resolves to the saved path, or None when the user cancelled.
 #[tauri::command]
-async fn export_csv(app: AppHandle, text: String, suggested_name: String) -> Result<Option<String>, String> {
+async fn export_csv(
+    app: AppHandle,
+    text: String,
+    suggested_name: String,
+) -> Result<Option<String>, String> {
     let handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         use tauri_plugin_dialog::DialogExt;
         let state = handle.state::<AppState>();
         // the popup hides when it loses focus; not while the dialog (which takes the focus) is open
-        state.dialog_open.store(true, std::sync::atomic::Ordering::SeqCst);
+        state
+            .dialog_open
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         let result = files::run_export(
             |name| {
                 handle
@@ -144,7 +182,9 @@ async fn export_csv(app: AppHandle, text: String, suggested_name: String) -> Res
             &state.data_dir,
             &state.last_export_dir,
         );
-        state.dialog_open.store(false, std::sync::atomic::Ordering::SeqCst);
+        state
+            .dialog_open
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         result
     })
     .await
@@ -153,7 +193,11 @@ async fn export_csv(app: AppHandle, text: String, suggested_name: String) -> Res
 
 #[tauri::command]
 fn set_tray_label(state: State<AppState>, label: String) {
-    let label: String = label.chars().filter(|c| !c.is_control()).take(120).collect();
+    let label: String = label
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(120)
+        .collect();
     if env_var("MONEYBAR_SELFTEST").is_some() {
         eprintln!("money-bar: tray-label {label}"); // lets the opt-in self test report its result
     }
@@ -186,20 +230,39 @@ fn quit_app(app: AppHandle) {
 fn to_rect(r: &TauriRect, scale: f64) -> Rect {
     let p = r.position.to_physical::<i32>(scale);
     let s = r.size.to_physical::<u32>(scale);
-    Rect { x: p.x, y: p.y, w: s.width as i32, h: s.height as i32 }
+    Rect {
+        x: p.x,
+        y: p.y,
+        w: s.width as i32,
+        h: s.height as i32,
+    }
 }
 
 /// Work area (screen minus menu bar and taskbar) of the monitor that holds the point, else the primary monitor.
 fn work_area(app: &AppHandle, around: Option<Rect>) -> Rect {
     let monitor = around
-        .and_then(|r| app.monitor_from_point((r.x + r.w / 2) as f64, (r.y + r.h / 2) as f64).ok().flatten())
+        .and_then(|r| {
+            app.monitor_from_point((r.x + r.w / 2) as f64, (r.y + r.h / 2) as f64)
+                .ok()
+                .flatten()
+        })
         .or_else(|| app.primary_monitor().ok().flatten());
     match monitor {
         Some(m) => {
             let a = m.work_area();
-            Rect { x: a.position.x, y: a.position.y, w: a.size.width as i32, h: a.size.height as i32 }
+            Rect {
+                x: a.position.x,
+                y: a.position.y,
+                w: a.size.width as i32,
+                h: a.size.height as i32,
+            }
         }
-        None => Rect { x: 0, y: 0, w: 1280, h: 720 },
+        None => Rect {
+            x: 0,
+            y: 0,
+            w: 1280,
+            h: 720,
+        },
     }
 }
 
@@ -209,11 +272,24 @@ fn size_and_place(app: &AppHandle, win: &WebviewWindow, icon: Option<Rect>) {
     let icon = usable_icon(icon);
     let work = work_area(app, icon);
     let scale = win.scale_factor().unwrap_or(1.0);
-    let (w, h) = (popup_width_logical(work.w, scale, MARGIN), popup_height_logical(work.h, scale, MARGIN));
+    let (w, h) = (
+        popup_width_logical(work.w, scale, MARGIN),
+        popup_height_logical(work.h, scale, MARGIN),
+    );
     let _ = win.set_size(LogicalSize::new(w as f64, h as f64));
-    let size = win.outer_size().map(|s| (s.width as i32, s.height as i32)).unwrap_or(((w as f64 * scale) as i32, (h as f64 * scale) as i32));
+    let size = win
+        .outer_size()
+        .map(|s| (s.width as i32, s.height as i32))
+        .unwrap_or(((w as f64 * scale) as i32, (h as f64 * scale) as i32));
     let margin = (MARGIN as f64 * scale).round() as i32;
-    let (x, y) = popup_position(icon, work, size.0, size.1, margin, fallback_corner(Os::current() == Os::Windows));
+    let (x, y) = popup_position(
+        icon,
+        work,
+        size.0,
+        size.1,
+        margin,
+        fallback_corner(Os::current() == Os::Windows),
+    );
     let _ = win.set_position(PhysicalPosition::new(x, y));
 }
 
@@ -227,7 +303,9 @@ fn place_and_show(app: &AppHandle, win: &WebviewWindow, icon: Option<Rect>) {
 }
 
 fn toggle_popup(app: &AppHandle, icon: Option<Rect>) {
-    let Some(win) = app.get_webview_window("main") else { return };
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
     let state = app.state::<AppState>();
     if win.is_visible().unwrap_or(false) {
         let _ = win.hide();
@@ -268,9 +346,18 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, rect, .. } = event {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                rect,
+                ..
+            } = event
+            {
                 let app = tray.app_handle();
-                let scale = app.get_webview_window("main").and_then(|w| w.scale_factor().ok()).unwrap_or(1.0);
+                let scale = app
+                    .get_webview_window("main")
+                    .and_then(|w| w.scale_factor().ok())
+                    .unwrap_or(1.0);
                 let r = to_rect(&rect, scale);
                 *app.state::<AppState>().last_icon.lock().unwrap() = Some(r);
                 toggle_popup(app, Some(r));
@@ -302,24 +389,57 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
-        .manage(AppState { data_dir, blurred_at: Mutex::new(None), last_icon: Mutex::new(None), tray: Mutex::new(None), dialog_open: std::sync::atomic::AtomicBool::new(false), last_export_dir: Mutex::new(None), hold_until: Mutex::new(None) })
-        .invoke_handler(tauri::generate_handler![app_info, fs_read, fs_stat, fs_write, fs_move_aside, fs_clean_temps, export_csv, set_tray_label, hold_popup_open, hide_popup, quit_app])
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
+        .manage(AppState {
+            data_dir,
+            blurred_at: Mutex::new(None),
+            last_icon: Mutex::new(None),
+            tray: Mutex::new(None),
+            dialog_open: std::sync::atomic::AtomicBool::new(false),
+            last_export_dir: Mutex::new(None),
+            hold_until: Mutex::new(None),
+        })
+        .invoke_handler(tauri::generate_handler![
+            app_info,
+            fs_read,
+            fs_stat,
+            fs_write,
+            fs_move_aside,
+            fs_clean_temps,
+            export_csv,
+            set_tray_label,
+            hold_popup_open,
+            hide_popup,
+            quit_app
+        ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory); // no Dock icon
             build_tray(app.handle())?;
-            eprintln!("money-bar: tray icon created; data folder {}", app.state::<AppState>().data_dir.display());
+            eprintln!(
+                "money-bar: tray icon created; data folder {}",
+                app.state::<AppState>().data_dir.display()
+            );
             if let Some(win) = app.get_webview_window("main") {
                 let handle = app.handle().clone();
                 let w = win.clone();
                 win.on_window_event(move |event| {
                     if let WindowEvent::Focused(false) = event {
                         let st = handle.state::<AppState>();
-                        if st.dialog_open.load(std::sync::atomic::Ordering::SeqCst) || st.hold_until.lock().unwrap().is_some_and(|t| Instant::now() < t) {
+                        if st.dialog_open.load(std::sync::atomic::Ordering::SeqCst)
+                            || st
+                                .hold_until
+                                .lock()
+                                .unwrap()
+                                .is_some_and(|t| Instant::now() < t)
+                        {
                             return;
                         }
-                        *handle.state::<AppState>().blurred_at.lock().unwrap() = Some(Instant::now());
+                        *handle.state::<AppState>().blurred_at.lock().unwrap() =
+                            Some(Instant::now());
                         let _ = w.hide();
                     }
                 });
@@ -356,20 +476,33 @@ mod shell_tests {
             Ok(1)
         });
         assert!(r.is_err(), "gave up instead of waiting");
-        assert!(started.elapsed() < Duration::from_secs(2), "the caller was released after the limit, not after the file");
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "the caller was released after the limit, not after the file"
+        );
     }
 
     #[test]
     fn a_quick_file_operation_returns_its_value() {
-        assert_eq!(off_main_for(Duration::from_secs(2), || Ok::<_, String>(7)), Ok(7));
-        assert_eq!(off_main_for::<u8>(Duration::from_secs(2), || Err("disk full".into())), Err("disk full".to_string()));
+        assert_eq!(
+            off_main_for(Duration::from_secs(2), || Ok::<_, String>(7)),
+            Ok(7)
+        );
+        assert_eq!(
+            off_main_for::<u8>(Duration::from_secs(2), || Err("disk full".into())),
+            Err("disk full".to_string())
+        );
     }
 
     /// WCAG relative luminance of an sRGB channel triple.
     fn luminance(r: u8, g: u8, b: u8) -> f64 {
         let lin = |c: u8| {
             let c = c as f64 / 255.0;
-            if c <= 0.03928 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+            if c <= 0.03928 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
         };
         0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
     }
@@ -385,7 +518,13 @@ mod shell_tests {
             worst_dark = worst_dark.min((l + 0.05) / (luminance(26, 26, 26) + 0.05));
         }
         assert!(n >= 100, "the glyph has opaque pixels (found {n})");
-        assert!(worst_white >= 3.0, "contrast on a white panel is {worst_white:.2}");
-        assert!(worst_dark >= 3.0, "contrast on a near-black panel is {worst_dark:.2}");
+        assert!(
+            worst_white >= 3.0,
+            "contrast on a white panel is {worst_white:.2}"
+        );
+        assert!(
+            worst_dark >= 3.0,
+            "contrast on a near-black panel is {worst_dark:.2}"
+        );
     }
 }
