@@ -27,6 +27,35 @@ use position::{
 
 const MARGIN: i32 = 8;
 
+/// After the popup hides itself on blur, a tray click within this long is the click that caused the blur and must not reopen it.
+/// 400 ms so a click held a little longer (hide on mouse-down, reopen on release) is still covered.
+const BLUR_SUPPRESS: Duration = Duration::from_millis(400);
+/// How long a native menu may hold the popup open.
+const HOLD: Duration = Duration::from_millis(1500);
+
+/// True when no hold is active at `now`.
+fn hold_expired(hold: Option<Instant>, now: Instant) -> bool {
+    !hold.is_some_and(|t| now < t)
+}
+
+/// After a dialog or hold ended: if the popup is still visible but nothing has the focus, the blur that was swallowed will never
+/// come again, so hide it now (the same way the blur handler does).
+fn hide_if_unfocused(app: &AppHandle) {
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    let st = app.state::<AppState>();
+    if st.dialog_open.load(std::sync::atomic::Ordering::SeqCst)
+        || !hold_expired(*st.hold_until.lock().unwrap(), Instant::now())
+    {
+        return;
+    }
+    if win.is_visible().unwrap_or(false) && !win.is_focused().unwrap_or(true) {
+        *st.blurred_at.lock().unwrap() = Some(Instant::now());
+        let _ = win.hide();
+    }
+}
+
 struct AppState {
     data_dir: PathBuf,
     /// When the popup last hid itself because it lost focus: the tray click that caused the blur must not re-open it.
@@ -202,6 +231,7 @@ async fn export_csv(
         state
             .dialog_open
             .store(false, std::sync::atomic::Ordering::SeqCst);
+        hide_if_unfocused(&handle);
         result
     })
     .await
@@ -228,8 +258,13 @@ fn set_tray_label(state: State<AppState>, label: String) {
 /// The page calls this when a native menu (a select) is about to open: the popup stays open for the next 1.5 seconds even if it
 /// loses focus to the menu.
 #[tauri::command]
-fn hold_popup_open(state: State<AppState>) {
-    *state.hold_until.lock().unwrap() = Some(Instant::now() + Duration::from_millis(1500));
+fn hold_popup_open(app: AppHandle, state: State<AppState>) {
+    *state.hold_until.lock().unwrap() = Some(Instant::now() + HOLD);
+    // one sleep per call (no polling): when the hold has run out, hide the popup if focus never came back
+    std::thread::spawn(move || {
+        std::thread::sleep(HOLD + Duration::from_millis(100));
+        hide_if_unfocused(&app);
+    });
 }
 
 #[tauri::command]
@@ -335,7 +370,7 @@ fn toggle_popup(app: &AppHandle, icon: Option<Rect>) {
         return;
     }
     if let Some(t) = *state.blurred_at.lock().unwrap() {
-        if t.elapsed() < Duration::from_millis(250) {
+        if t.elapsed() < BLUR_SUPPRESS {
             return; // this click is the one that made the popup lose focus and hide
         }
     }
@@ -459,11 +494,7 @@ pub fn run() {
                     if let WindowEvent::Focused(false) = event {
                         let st = handle.state::<AppState>();
                         if st.dialog_open.load(std::sync::atomic::Ordering::SeqCst)
-                            || st
-                                .hold_until
-                                .lock()
-                                .unwrap()
-                                .is_some_and(|t| Instant::now() < t)
+                            || !hold_expired(*st.hold_until.lock().unwrap(), Instant::now())
                         {
                             return;
                         }
@@ -496,6 +527,19 @@ pub fn run() {
 #[cfg(test)]
 mod shell_tests {
     use super::*;
+
+    #[test]
+    fn the_blur_suppression_window_covers_a_slow_click() {
+        assert_eq!(BLUR_SUPPRESS, Duration::from_millis(400));
+    }
+
+    #[test]
+    fn a_hold_expires() {
+        let now = Instant::now();
+        assert!(hold_expired(None, now));
+        assert!(!hold_expired(Some(now + Duration::from_millis(1)), now));
+        assert!(hold_expired(Some(now), now));
+    }
 
     #[test]
     fn a_stuck_file_operation_does_not_block_the_caller() {

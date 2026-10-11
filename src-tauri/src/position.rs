@@ -338,12 +338,23 @@ mod tests {
     }
 }
 
-/// The size to place the popup with. `outer_size()` read straight after `set_size` can still be the OLD (tiny, hidden) window
-/// size on Linux/GTK, which put the popup at x = screen width - 42, mostly off screen. A window can be larger than the size we
-/// asked for (a title bar or border) but never smaller, so take the larger of the two per axis.
+/// Extra pixels a title bar or border can add to the size we asked for.
+const DECORATION_SLACK: i32 = 64;
+
+/// The size to place the popup with. `outer_size()` read straight after `set_size` can still be a STALE size: the old tiny hidden
+/// window on Linux/GTK, or the old tall window from a bigger monitor. A window can be larger than the size we asked for (a title
+/// bar or border) but only by a little, so `outer` is trusted per axis only when `requested <= outer <= requested + 64`;
+/// anything else is stale and the requested size is used.
 pub fn settled_size(outer: Option<(i32, i32)>, requested: (i32, i32)) -> (i32, i32) {
+    let axis = |o: i32, r: i32| {
+        if (r..=r + DECORATION_SLACK).contains(&o) {
+            o
+        } else {
+            r
+        }
+    };
     match outer {
-        Some((w, h)) => (w.max(requested.0), h.max(requested.1)),
+        Some((w, h)) => (axis(w, requested.0), axis(h, requested.1)),
         None => requested,
     }
 }
@@ -360,6 +371,20 @@ mod settled_size_tests {
     #[test]
     fn a_window_with_a_border_keeps_its_larger_outer_size() {
         assert_eq!(settled_size(Some((436, 679)), (420, 640)), (436, 679));
+    }
+
+    #[test]
+    fn a_stale_larger_outer_size_never_wins_over_the_requested_size() {
+        // popup last shown tall (900) on a big monitor, now requested short (500) on a small screen
+        assert_eq!(settled_size(Some((420, 900)), (420, 500)), (420, 500));
+        assert_eq!(settled_size(Some((800, 640)), (420, 640)), (420, 640));
+    }
+
+    #[test]
+    fn decoration_slack_is_inclusive_and_per_axis() {
+        assert_eq!(settled_size(Some((484, 704)), (420, 640)), (484, 704));
+        assert_eq!(settled_size(Some((485, 705)), (420, 640)), (420, 640));
+        assert_eq!(settled_size(Some((436, 900)), (420, 640)), (436, 640));
     }
 
     #[test]

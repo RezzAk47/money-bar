@@ -394,19 +394,28 @@ pub fn stat(dir: &Path, name: &str) -> Result<Option<Stamp>, String> {
 /// An exclusive lock on `<data folder>/.lock`, held while a compare-and-swap write checks the stamp and renames. Another
 /// process holding it (a second copy of this app) is waited for, up to about 3 seconds.
 struct Lock {
-    _f: fs::File,
+    _f: Option<fs::File>,
 }
 impl Lock {
     fn acquire(dir: &Path) -> Result<Lock, String> {
-        let f = fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(dir.join(".lock"))
-            .map_err(|e| format!("cannot open the lock file: {e}"))?;
+        let mut o = fs::OpenOptions::new();
+        o.create(true).truncate(false).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            o.custom_flags(libc::O_NONBLOCK); // a FIFO planted as the lock file must not block the open
+        }
+        // No lock file (unwritable folder, a FIFO or other non-file in its place) means "no lock": the compare-and-swap that
+        // runs next still refuses a stale write, and an open that would block forever is the worse failure.
+        let Ok(f) = o.open(dir.join(".lock")) else {
+            return Ok(Lock { _f: None });
+        };
+        if !f.metadata().map(|m| m.is_file()).unwrap_or(false) {
+            return Ok(Lock { _f: None });
+        }
         for _ in 0..150 {
             if f.try_lock().is_ok() {
-                return Ok(Lock { _f: f });
+                return Ok(Lock { _f: Some(f) });
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
@@ -1665,6 +1674,26 @@ mod tests {
         fs::write(&stale, "x").unwrap();
         run_export(|_| None, "x", "a", &data, &last).unwrap();
         assert!(stale.exists(), "younger than an hour: still there");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_in_place_of_the_lock_file_does_not_block_a_compare_and_swap_write() {
+        let d = tempfile::tempdir().unwrap();
+        let c = std::ffi::CString::new(d.path().join(".lock").to_str().unwrap()).unwrap();
+        // SAFETY: a valid NUL-terminated path and a plain mode.
+        assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let dir = d.path().to_path_buf();
+        std::thread::spawn(move || {
+            let r = write(&dir, "entries.json", "{\"entries\":[]}", Some(None));
+            let _ = tx.send(r);
+        });
+        let r = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the write must not hang on a FIFO lock file");
+        assert!(r.is_ok(), "{r:?}");
+        assert!(d.path().join("entries.json").exists());
     }
 
     #[test]
