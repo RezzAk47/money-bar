@@ -1,6 +1,6 @@
 [package]
 name = "money-bar-cross"
-version = "0.1.0"
+version = "0.1.1"
 description = "Money Bar for Windows, Linux and macOS: a tray app that tracks spending, income and tips."
 edition = "2021"
 rust-version = "1.90"
