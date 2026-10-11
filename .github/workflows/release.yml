@@ -1,6 +1,6 @@
 # Release workflow: builds unsigned installers for macOS (Apple silicon and Intel), Windows and Linux when a tag
-# like v0.1.0 is pushed, and attaches them to a DRAFT GitHub Release. NOT YET EXECUTED: GitHub Actions has never
-# run this file. Expect small fixes on the first real run.
+# like v0.1.0 is pushed, and attaches them to a DRAFT GitHub Release. Run once so far (tag v0.1.0 made
+# a draft with five installers); later changes have not been through it.
 #
 # Pins: tauri-apps/tauri-action is pinned to a full commit SHA (tag action-v1.0.0, verified with the GitHub API).
 # The other actions are pinned to full commit SHAs as well.
@@ -49,6 +49,8 @@ jobs:
             args: --bundles deb,appimage
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Tag must match the version in tauri.conf.json
         shell: bash
@@ -106,7 +108,7 @@ jobs:
           releaseName: 'Money Bar v__VERSION__'
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} -- --locked
           releaseBody: |
             Unsigned builds of Money Bar. They are not code-signed or notarised, so your system will warn you the first time.
 
