@@ -78,7 +78,7 @@ fn app_info(state: State<AppState>) -> AppInfo {
         seed_sample: env_var("MONEYBAR_SEED_SAMPLE").is_some()
             && env_var("MONEYBAR_DATA_DIR").is_some_and(|d| !d.trim().is_empty()),
         tray_note: if os == Os::Linux {
-            Some("Linux: tray icons cannot report clicks, so open Money Bar from the tray icon's menu (Show Money Bar). The window opens at the top right of the screen. On GNOME the AppIndicator extension is required.")
+            Some("Linux: tray icons cannot report clicks, so open Money Bar from the tray icon's menu (Show Money Bar). The window opens near the top right on most desktops; on Wayland the compositor chooses the place (often the centre). On GNOME the AppIndicator extension is required.")
         } else {
             None
         },
