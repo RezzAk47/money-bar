@@ -7,7 +7,7 @@ tray icon (identifier `app.moneybar.cross`); it does not touch the Mac app, its 
 
 Everything is local: no network, no accounts, no analytics. The page loads nothing remote (CSP `default-src 'self'`).
 
-**Status: early.** Tested on macOS only. Windows and Linux builds are untested; the release workflow has not been run yet. Downloads will be unsigned, so Windows SmartScreen and macOS Gatekeeper will warn. Not financial advice or accounting software.
+**Status: early.** Developed on macOS. CI (build, tests, screenshots) passes on Windows, Linux and macOS. The release installers were installed and started in an automated smoke test on all three systems (Linux on x86_64 only); that test does not click the tray icon, and nobody has used the Windows or Linux builds by hand yet. Downloads will be unsigned, so Windows SmartScreen and macOS Gatekeeper will warn. Not financial advice or accounting software.
 
 Screenshots use made-up sample data (the app's own sample entries, nothing personal).
 
@@ -142,7 +142,7 @@ The app code makes no network requests and has no analytics or accounts. Your en
 
 ## Releasing
 
-Releases are built by `.github/workflows/release.yml` when a version tag is pushed. The builds are unsigned (see the release notes text in that file). The workflow has not been run on GitHub yet, so expect to fix small things on the first release.
+Releases are built by `.github/workflows/release.yml` when a version tag is pushed. The builds are unsigned (see the release notes text in that file). The release workflow builds the installers for all three systems on GitHub; expect small fixes on the first public release.
 
 1. Choose the new version, for example `0.2.0`, and change it in all three places so they match: `version` in `src-tauri/tauri.conf.json`, `version` in `src-tauri/Cargo.toml`, and `version` in `package.json`. Then run `cargo check` in `src-tauri` (and `npm install --package-lock-only`) so `Cargo.lock` and `package-lock.json` follow.
 2. Commit the change, then tag it: `git tag v0.2.0`. The tag must be `v` plus the exact version; the workflow stops with an error if it differs from `tauri.conf.json` or if the three versions disagree.
