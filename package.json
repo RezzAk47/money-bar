@@ -4,7 +4,7 @@
   "private": true,
   "license": "MIT",
   "type": "module",
-  "description": "Money Bar for Windows, Linux and macOS (Tauri tray app). Same entries.json as the Mac app.",
+  "description": "Money Bar for Windows, Linux and macOS: a tray app that tracks spending, income and tips.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
