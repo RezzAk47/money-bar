@@ -6,9 +6,9 @@ import * as Civil from './civil';
 import { BACKUP_FILE, DAILY_BACKUP_FILE, ENTRIES_FILE } from './datadir';
 import { FileIO, FileStamp, Queue, errMessage, isConflict, sameStamp } from './io';
 import { DecodeError, Extra, newId } from './json';
-import { MAX_CENTS, formatMoney, moneyMessage } from './money';
+import { MAX_CENTS, formatMoney, moneyMessage, parseMoney } from './money';
 import {
-  DEBT_PAYMENT, EXPENSE_CATEGORIES, INCOME_SOURCES, MAX_CATEGORY_LENGTH, cleanCategory, isDebtName, normalize, sameName, strip,
+  DEBT_PAYMENT, EXPENSE_CATEGORIES, INCOME_SOURCES, MAX_CATEGORY_LENGTH, cleanCategory, foldKey, isDebtName, normalize, sameName, strip,
 } from './categories';
 import type { Kind } from './categories';
 import {
@@ -17,7 +17,7 @@ import {
 } from './model';
 import {
   BudgetStatus, DayRange, Glance, Period, Report, alertLevel, budgetLevel, budgetMessage, budgetPercent, budgetStatuses, makeGlance,
-  makeReport, quad, rangeContaining, shifted,
+  budgetable, makeReport, quad, rangeContaining, shifted,
 } from './reports';
 import type { Quad } from './reports';
 import { MAX_RULES, applyRules, cleanRule, due, latest, validateRule } from './recurring';
@@ -400,6 +400,25 @@ export class MoneyStore {
       if (cents > MAX_CENTS) return Promise.resolve(moneyMessage('tooLarge'));
     }
     return this.mutate((d) => { setBudgetIn(d.settings, category, cents); return null; });
+  }
+  /** Sets a monthly budget from typed text, the same rules as Settings: empty clears it, otherwise a positive amount. */
+  setBudgetFromText(category: string, text: string): Promise<string | null> {
+    const t = text.trim();
+    if (t === '') return this.setBudget(category, undefined);
+    const r = parseMoney(t, this.settings.currencySymbol);
+    if (!r.ok) return Promise.resolve(moneyMessage(r.error));
+    return this.setBudget(category, r.cents);
+  }
+  /** The active monthly budget of a category (any letter case), or undefined. A budget of a category that is not in the
+   * list (an orphan) does not count, the same as in the budget bars and alerts. */
+  budgetFor(category: string): number | undefined {
+    const k = foldKey(category);
+    return Object.entries(this.activeBudgets()).find(([n]) => foldKey(n) === k)?.[1];
+  }
+  /** A report row can get a budget only when it names a spending category in the list: not the grouped row, not card
+   * payments, and not a name that only old or imported entries carry (that budget would be an orphan: never shown, never sent). */
+  canBudget(category: string): boolean {
+    return budgetable(category) && this.expenseCategories().some((c) => sameName(c, category));
   }
   async setBudgetNotify(on: boolean): Promise<string | null> {
     // switching it on again gives the alerts a fresh set of tries

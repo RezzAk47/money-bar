@@ -28,7 +28,7 @@ currency, week start (1 = Sunday ... 7), menu bar mode, theme/layout/glass/blur,
 alert record, recurring rules and custom categories.
 
 * Strict decode with named errors (`entries > #2 > cents: ...`). A file that cannot be read is **never overwritten**; nothing
-  saves until you fix it or choose "Keep a copy and start over".
+  saves until you fix it or choose "Keep a copy and start over" (it asks first: "Yes, keep a copy and start over" or Cancel; Cancel has the focus and a held key never answers).
 * Keys this app does not know are kept (top level and inside `settings`) and written back; `version` written is
   max(file, current).
 * Writes are atomic (temp file, fsync, rename). **A symlinked `entries.json` is followed only when it points at a valid Money
@@ -50,9 +50,10 @@ alert record, recurring rules and custom categories.
   civil date maths, periods, reports, budgets, month-at-a-glance, recurring rules, CSV, themes and contrast, the store.
   Periods use plain calendar days, so DST and a day without midnight (America/Sao_Paulo 2018-11-04) cannot lose or double a day.
 * `src/ui/` is Preact: header, add form, Today cards (+ card payments line), budgets strip, recent list (edit, delete with a
-  confirm, repeat icon, "Card payment" rows), Reports (day/week/month/custom, SVG bars or line, donut, budget bars, glance),
-  Settings (themes, layout, glass/blur, items shown, budgets, recurring list with inline editor, categories, sample data,
-  data info).
+  confirm, repeat icon, "Card payment" rows), Reports (day/week/month/custom, SVG bars or line, donut, budget bars, glance;
+  clicking a row of a category in your list opens a small inline form for its monthly budget, with the same rules as
+  Settings; Escape closes only that form; names that only old or imported entries carry are not clickable), Settings (themes, layout, glass/blur, items shown, budgets, recurring list with inline editor that starts
+  in the amount field and closes on Escape without leaving Settings, categories, sample data, data info).
 * `src-tauri/` is the shell: tray with the menu-bar text as title (macOS) and tooltip, one frameless popup placed next to the
   tray icon, single instance, autostart, notifications behind an interface. The webview may only call: `app_info`, `fs_read`,
   `fs_stat`, `fs_write`, `fs_move_aside`, `fs_clean_temps` (allowed file names inside the data folder), `export_csv`,
@@ -107,7 +108,7 @@ to stderr (via the tray label). It must always report 0 conflicts.
 
 ## What was verified, and what was not
 
-Verified on macOS (Apple silicon) only: vitest (232 passed, 1 skipped) and cargo test (`--locked`, 66 passed, 1 ignored), both
+Verified on macOS (Apple silicon) only: vitest (236 passed, 1 skipped) and cargo test (`--locked`, 66 passed, 1 ignored), both
 re-run 2026-10-12; tsc, clippy, a debug `tauri build`, a real 8-second run with the tray created and `entries.json` written by
 the Rust side from synthetic data, that file decoded by the Mac app's own `Model.swift` (compiled in a scratch folder,
 `loadError: none`) and a file written by that Model read back here and written back, Playwright screenshots and keyboard checks

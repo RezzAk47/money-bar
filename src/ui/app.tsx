@@ -69,18 +69,41 @@ export function App({ ctl }: { ctl: Controller }) {
   );
 }
 
+/** A held key repeats: on the start-over buttons only a fresh press counts, so holding Enter never answers the question. */
+const noRepeat = (e: KeyboardEvent) => { if (e.repeat && (e.key === 'Enter' || e.key === ' ')) e.preventDefault(); };
+
 function Banners({ ctl }: { ctl: Controller }) {
   const s = ctl.store;
+  const [asking, setAsking] = useState(false);
+  const cancelBtn = useRef<HTMLButtonElement>(null);
+  const startBtn = useRef<HTMLButtonElement>(null);
+  // the safe answer has the focus, so a held Enter cannot run into "Yes"
+  useEffect(() => { if (asking) cancelBtn.current?.focus(); }, [asking]);
+  // the file was fixed (or replaced) meanwhile: the question no longer applies
+  useEffect(() => { if (s.loadError === null) setAsking(false); }, [s.loadError]);
+  const keep = () => { setAsking(false); setTimeout(() => startBtn.current?.focus(), 0); };
   return (
     <>
       {s.loadError !== null && (
         <div class="banner error" role="alert">
           <p><strong>entries.json cannot be read.</strong> Nothing will be saved or changed until it is fixed.</p>
           <p class="detail" dir="auto">{s.loadError}</p>
-          <div class="row">
-            <button class="btn" onClick={() => void s.startOver()}>Keep a copy and start over</button>
-            <button class="btn" onClick={() => void ctl.backend.revealData()}>Show the folder</button>
-          </div>
+          {asking ? (
+            <div class="row">
+              <p id="start-over-q">Start over with an empty list? The unreadable file is kept next to it as a backup.</p>
+              <span class="confirm" role="group" aria-labelledby="start-over-q"
+                onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); keep(); } }}>
+                <button class="btn danger" onKeyDown={noRepeat} onClick={() => { setAsking(false); void s.startOver(); }}>Yes, keep a copy and start over</button>
+                <button class="btn" ref={cancelBtn} onKeyDown={noRepeat} onClick={keep}>Cancel</button>
+              </span>
+              <button class="btn" onClick={() => void ctl.backend.revealData()}>Show the folder</button>
+            </div>
+          ) : (
+            <div class="row">
+              <button class="btn" ref={startBtn} onKeyDown={noRepeat} onClick={() => setAsking(true)}>Keep a copy and start over</button>
+              <button class="btn" onClick={() => void ctl.backend.revealData()}>Show the folder</button>
+            </div>
+          )}
         </div>
       )}
       {s.saveError !== null && s.loadError === null && <div class="banner error" role="alert"><p>Could not save: {s.saveError}</p></div>}

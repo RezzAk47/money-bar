@@ -104,11 +104,9 @@ function Budgets({ ctl, setMsg }: { ctl: Controller; setMsg: (m: string | null) 
   const show = (c: string) => draft.get(c) ?? (limitOf(c) !== undefined ? plainMoney(limitOf(c)!) : '');
   const [bad, setBad] = useState<string | null>(null);
   const set = async (c: string) => {
-    const t = show(c).trim();
-    let cents: number | undefined;
-    if (t !== '') { const r = parseMoney(t, s.currencySymbol); if (!r.ok) { setBad(`${c}: ${moneyMessage(r.error)}`); return; } cents = r.cents; }
-    const e = await store.setBudget(c, cents);
-    setBad(e); setMsg(null); setDraft((d) => { const n = new Map(d); n.delete(c); return n; });
+    const e = await store.setBudgetFromText(c, show(c));
+    if (e) { setBad(`${c}: ${e}`); return; }
+    setBad(null); setMsg(null); setDraft((d) => { const n = new Map(d); n.delete(c); return n; });
   };
   const orphans = store.orphanBudgets();
   return (
@@ -140,6 +138,25 @@ function Recurring({ ctl }: { ctl: Controller }) {
   const [error, setError] = useState<string | null>(null);
   const [asking, setAsking] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const amount = useRef<HTMLInputElement>(null);
+  const addBtn = useRef<HTMLButtonElement>(null);
+  const opener = useRef<HTMLElement | null>(null); // the button that opened the form (Add, or a rule's Edit)
+  const listHead = useRef<HTMLParagraphElement>(null);
+  const formOpen = draft !== null;
+  const formKey = draft?.id ?? '';
+  // a new or edited rule starts in the amount field, like the Mac app
+  useEffect(() => { if (formOpen) amount.current?.focus(); }, [formOpen, formKey]);
+  /** Closes the form (Cancel, Escape, after saving) and gives focus back to what opened it: the rule's Edit button or Add.
+   * If that is gone or disabled (Add at the rule limit), the Add button, else the section's intro line. */
+  const closeForm = () => {
+    setDraft(null); setError(null);
+    setTimeout(() => {
+      const usable = (b: HTMLElement | null): b is HTMLElement => !!b && b.isConnected && !(b as HTMLButtonElement).disabled;
+      const target = [opener.current, addBtn.current].find(usable);
+      if (target) target.focus();
+      else if (listHead.current) { listHead.current.tabIndex = -1; listHead.current.focus(); }
+    }, 0);
+  };
   const blank = (): Draft => ({ id: null, kind: 'expense', amount: '', category: 'Rent', note: '', repeatKind: 'monthly', interval: '14', start: store.todayKey, end: '' });
   const edit = (r: RecurringRule): Draft => ({ id: r.id, kind: r.kind, amount: plainMoney(r.cents), category: r.category, note: r.note, repeatKind: r.repeatKind, interval: String(r.interval), start: r.start, end: r.end ?? '' });
   const set = (p: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...p } : d));
@@ -155,12 +172,12 @@ function Recurring({ ctl }: { ctl: Controller }) {
     const e = draft.id ? await store.updateRule(rule) : await store.addRule(rule);
     setBusy(false);
     if (e) { setError(e); return; }
-    setError(null); setDraft(null);
+    closeForm();
   };
   const full = s.recurring.length >= MAX_RULES;
   return (
     <Section title="Recurring">
-      <p class="muted">Rent, pay, subscriptions: they add themselves on their date, once each, even if the app was closed. Deleting a rule keeps the entries it made.</p>
+      <p class="muted" ref={listHead}>Rent, pay, subscriptions: they add themselves on their date, once each, even if the app was closed. Deleting a rule keeps the entries it made.</p>
       <ul class="rules">
         {s.recurring.map((r) => {
           const next = nextDue(r);
@@ -177,17 +194,18 @@ function Recurring({ ctl }: { ctl: Controller }) {
                   <button class="btn" onClick={() => setAsking(null)}>Keep</button></span>
               ) : (<>
                 <button class="icon" aria-label={r.paused ? 'Resume' : 'Pause'} onClick={() => void store.setRulePaused(r.id, !r.paused)}>{r.paused ? <I.PlayI /> : <I.Pause />}</button>
-                <button class="icon" aria-label="Edit recurring entry" onClick={() => { setDraft(edit(r)); setError(null); }}><I.Pencil /></button>
+                <button class="icon" aria-label="Edit recurring entry" onClick={(e) => { opener.current = e.currentTarget; setDraft(edit(r)); setError(null); }}><I.Pencil /></button>
                 <button class="icon" aria-label="Delete recurring entry" onClick={() => setAsking(r.id)}><I.Trash /></button></>)}
             </li>
           );
         })}
       </ul>
       {draft ? (
-        <form class="editor" aria-label={draft.id ? 'Edit recurring entry' : 'New recurring entry'} onSubmit={(e) => { e.preventDefault(); void save(); }}>
+        <form class="editor" aria-label={draft.id ? 'Edit recurring entry' : 'New recurring entry'} onSubmit={(e) => { e.preventDefault(); void save(); }}
+          onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeForm(); } }}>
           <Segmented name="rkind" label="Type" value={draft.kind} options={KINDS.map((k) => [k, KIND_LABEL[k]] as [Kind, string])} onChange={(k) => set({ kind: k, category: k === 'expense' ? 'Rent' : k === 'income' ? 'Job' : '' })} />
           <div class="row">
-            <input class="money" aria-label="Amount" dir="ltr" inputMode="decimal" placeholder="0.00" value={draft.amount} onInput={(e) => set({ amount: (e.target as HTMLInputElement).value })} />
+            <input ref={amount} class="money" aria-label="Amount" dir="ltr" inputMode="decimal" placeholder="0.00" value={draft.amount} onInput={(e) => set({ amount: (e.target as HTMLInputElement).value })} />
             <select aria-label="Category" value={draft.category} onChange={(e) => set({ category: (e.target as HTMLSelectElement).value })}>
               {draft.kind === 'tip' && <option value="">Not said</option>}
               {(cats(draft.kind).includes(draft.category) || draft.category === '' ? cats(draft.kind) : [...cats(draft.kind), draft.category]).map((c) => <option key={c} value={c}>{c}</option>)}
@@ -201,11 +219,11 @@ function Recurring({ ctl }: { ctl: Controller }) {
           <div class="row"><label>Starts <input type="date" value={draft.start} onInput={(e) => set({ start: (e.target as HTMLInputElement).value })} /></label>
             <label>Ends (optional) <input type="date" value={draft.end} onInput={(e) => set({ end: (e.target as HTMLInputElement).value })} /></label></div>
           {error && <p class="err" role="alert">{error}</p>}
-          <div class="row end"><button type="button" class="btn" onClick={() => { setDraft(null); setError(null); }}>Cancel</button><button type="submit" class="btn primary" disabled={busy}>{draft.id ? 'Save rule' : 'Add rule'}</button></div>
+          <div class="row end"><button type="button" class="btn" onClick={closeForm}>Cancel</button><button type="submit" class="btn primary" disabled={busy}>{draft.id ? 'Save rule' : 'Add rule'}</button></div>
         </form>
       ) : (
         <>
-          <button class="btn" disabled={full} onClick={() => { setDraft(blank()); setError(null); }}><I.Plus />Add recurring entry</button>
+          <button class="btn" ref={addBtn} disabled={full} onClick={(e) => { opener.current = e.currentTarget; setDraft(blank()); setError(null); }}><I.Plus />Add recurring entry</button>
           {full && <p class="muted small">You can have at most {MAX_RULES} recurring entries.</p>}
         </>
       )}

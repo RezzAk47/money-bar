@@ -5,7 +5,7 @@ import * as I from './icons';
 import { Section, Segmented, longDay, monthName, shortDay } from './common';
 import * as Civil from '../core/civil';
 import { csvExport } from '../core/csv';
-import { divRound } from '../core/money';
+import { divRound, plainMoney } from '../core/money';
 import { MAX_RANGE_DAYS, Period, Report, buckets, budgetFraction, budgetLevel, budgetMessage, groupedCategories, makeRange, net, rangeContaining, stepPeriod } from '../core/reports';
 import type { DayRange, Glance } from '../core/reports';
 import { foldKey } from '../core/categories';
@@ -171,6 +171,20 @@ function Categories({ r, ctl }: { r: Report; ctl: Controller }) {
   const rows = groupedCategories(r.categories, s.settings.maxItems);
   const total = r.totals.spent;
   const budgeted = new Set(Object.keys(s.activeBudgets()).map(foldKey));
+  const [open, setOpen] = useState<string | null>(null);
+  const rowEls = useRef(new Map<string, HTMLButtonElement>()); // to give focus back to the row after its form closes
+  // The open form belongs to a row. When that row goes away (another period, a re-read file, merged into "Other"), forget
+  // it, so it never comes back later and takes the focus; if the focus was in it, put it on this card's heading.
+  const present = open !== null && rows.some((c) => c.name === open && s.canBudget(c.name));
+  useEffect(() => {
+    if (open === null || present) return;
+    setOpen(null);
+    const a = document.activeElement;
+    if (a === null || a === document.body) {
+      const h = document.querySelector<HTMLElement>('section[aria-label="Spending by category"] h2');
+      if (h) { h.tabIndex = -1; h.focus(); }
+    }
+  }, [open, present]);
   let a = 0;
   const segs = rows.map((c, i) => { const span = total > 0 ? (c.cents / total) * Math.PI * 2 : 0; const seg = { c, i, a0: a, a1: a + span }; a += span; return seg; });
   return (
@@ -182,9 +196,20 @@ function Categories({ r, ctl }: { r: Report; ctl: Controller }) {
               : segs.map(({ c, i, a0, a1 }) => <path key={c.name} class={`slice p${i % 8}`} d={arc(60, 60, 56, 30, a0, a1 - 0.012 > a0 ? a1 - 0.012 : a1)}><title>{`${c.name}: ${s.money(c.cents)} (${Math.round(c.percent)}%)`}</title></path>)}
           </svg>
           <ul class="legend-list">
-            {rows.map((c, i) => (
-              <li key={c.name}><i class={`sw p${i % 8}`} /><bdi dir="auto" class="cname">{c.name}</bdi>{budgeted.has(foldKey(c.name)) && <span title="Has a budget"><I.Target width={13} height={13} /><span class="sr"> has a budget</span></span>}<span class="grow" /><span class="muted num">{Math.round(c.percent)}%</span><b class="num">{s.money(c.cents)}</b></li>
-            ))}
+            {rows.map((c, i) => {
+              const has = budgeted.has(foldKey(c.name));
+              const line = <><i class={`sw p${i % 8}`} /><bdi dir="auto" class="cname">{c.name}</bdi>{has && <span title="Has a budget"><I.Target width={13} height={13} /><span class="sr"> has a budget</span></span>}<span class="grow" /><span class="muted num">{Math.round(c.percent)}%</span><b class="num">{s.money(c.cents)}</b></>;
+              if (!s.canBudget(c.name)) return <li key={c.name}>{line}</li>;
+              const limit = s.budgetFor(c.name);
+              return (
+                <li key={c.name} class="cat-item">
+                  <button class="catrow" ref={(el) => { if (el) rowEls.current.set(c.name, el); else rowEls.current.delete(c.name); }} aria-expanded={open === c.name} title={`Set a monthly budget for ${c.name}`}
+                    aria-label={`${c.name}, ${Math.round(c.percent)} percent, ${s.money(c.cents)}${limit !== undefined ? `, monthly budget ${s.money(limit)}` : ''}. Set a monthly budget.`}
+                    onClick={() => setOpen(open === c.name ? null : c.name)}>{line}</button>
+                  {open === c.name && <BudgetEditor ctl={ctl} name={c.name} limit={limit} close={() => { setOpen(null); setTimeout(() => rowEls.current.get(c.name)?.focus(), 0); }} />}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -192,10 +217,40 @@ function Categories({ r, ctl }: { r: Report; ctl: Controller }) {
   );
 }
 
+/** The small inline form under a report category: the monthly budget, with the same rules as Settings (empty = no limit). */
+function BudgetEditor({ ctl, name, limit, close }: { ctl: Controller; name: string; limit: number | undefined; close: () => void }) {
+  const s = ctl.store;
+  const [text, setText] = useState(limit !== undefined ? plainMoney(limit) : '');
+  const [error, setError] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => { input.current?.focus(); input.current?.select(); }, []);
+  const save = async (t: string) => {
+    const e = await s.setBudgetFromText(name, t);
+    if (e) { setError(e); return; }
+    close();
+  };
+  return (
+    <form class="editor budget-editor" aria-label={`Monthly budget for ${name}`} noValidate
+      onSubmit={(e) => { e.preventDefault(); void save(text); }}
+      onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } }}>
+      <label class="row"><span>Monthly budget</span>
+        <input class="money" dir="ltr" inputMode="decimal" autoComplete="off" placeholder="No limit" value={text} ref={input}
+          aria-invalid={error !== null} aria-describedby={error ? 'budget-error' : undefined}
+          onInput={(e) => { setText((e.target as HTMLInputElement).value); setError(null); }} /></label>
+      {error && <p id="budget-error" class="err" role="alert">{error}</p>}
+      <div class="row end">
+        <button type="button" class="btn" onClick={() => close()}>Cancel</button>
+        <button type="button" class="btn" disabled={limit === undefined} onClick={() => void save('')}>Remove</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  );
+}
+
 function BudgetBars({ ctl, month, title }: { ctl: Controller; month: DayRange; title: string }) {
   const s = ctl.store;
   const rows = s.budgetStatuses(month.start);
-  if (rows.length === 0) return <Section title={`Budgets, ${title}`}><p class="muted">No budgets yet. Set a monthly limit in Settings.</p></Section>;
+  if (rows.length === 0) return <Section title={`Budgets, ${title}`}><p class="muted">No budgets yet. Set a monthly limit in Settings, or click a category above.</p></Section>;
   return (
     <Section title={`Budgets, ${title}`}>
       <ul class="budget-rows">
@@ -206,7 +261,7 @@ function BudgetBars({ ctl, month, title }: { ctl: Controller; month: DayRange; t
           </li>
         ))}
       </ul>
-      <p class="muted small">Set a budget in Settings. Card payments are never counted.</p>
+      <p class="muted small">Set a budget in Settings, or click a category above. Card payments are never counted.</p>
     </Section>
   );
 }

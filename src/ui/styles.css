@@ -155,6 +155,11 @@ path.slice { fill: var(--c); } circle.ring { stroke: var(--c); } i.sw[class*=" p
 .legend-list { flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 5px; }
 .legend-list li, .glance-rows li { display: flex; align-items: center; gap: 8px; }
 .legend-list .cname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 110px; }
+.legend-list li.cat-item { display: block; }
+.catrow { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 2px 0; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.catrow:hover, .catrow[aria-expanded='true'] { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.budget-editor { margin-top: 4px; }
+.budget-editor label.row { gap: 8px; }
 .glance-head { margin-bottom: 8px; } .glance-head strong { font-size: 24px; }
 .spent-t { color: var(--spent-t); }
 .glance-rows { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
