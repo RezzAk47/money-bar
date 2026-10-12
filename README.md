@@ -3,7 +3,7 @@
 [![CI](https://github.com/RezzAk47/money-bar/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/RezzAk47/money-bar/actions/workflows/ci.yml)
 ![Platforms: Windows, Linux, macOS](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-informational)
 ![Version 0.1.1](https://img.shields.io/badge/version-0.1.1-blue)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-orange)](LICENSE)
 
 **Track what you spend, earn and get in tips, right from your tray.**
 
@@ -99,7 +99,10 @@ Third-party components and trademark notes: [THIRD-PARTY-NOTICES.md](THIRD-PARTY
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Free for personal and other non-commercial use. It may not be sold or used commercially. Licensed under the
+[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/); see [LICENSE](LICENSE).
+
+Versions published before 2026-10-12 were released under the MIT License.
 
 ## Contact
 

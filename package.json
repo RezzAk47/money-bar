@@ -2,7 +2,7 @@
   "name": "money-bar",
   "version": "0.1.1",
   "private": true,
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "description": "Money Bar for Windows, Linux and macOS: a tray app that tracks spending, income and tips.",
   "scripts": {
