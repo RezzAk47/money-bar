@@ -1,7 +1,7 @@
 # Money Bar: technical details
 
 The [README](../README.md) is the short version. This page has the full detail: the data file, how saves are protected, what
-was tested, and how the app differs from the SwiftUI Mac [money-bar](https://github.com/RezzAk47/money-bar).
+was tested, and how the app differs from the earlier SwiftUI Mac version of Money Bar (the "Mac app" below).
 
 Money Bar is not financial advice or accounting software.
 
@@ -96,7 +96,7 @@ npx tsc --noEmit
 (cd src-tauri && cargo test --locked && cargo clippy --all-targets -- -D warnings)
 npm run build && npm run ui:smoke && npm run shots     # Playwright: keyboard, focus, RTL, small screens, screenshots
 npm run tauri build -- --debug                          # app bundle for this OS
-MONEYBAR_DATA_DIR=$(mktemp -d) MONEYBAR_NO_NOTIFICATIONS=1 src-tauri/target/debug/money-bar-cross   # a run against a temp folder
+MONEYBAR_DATA_DIR=$(mktemp -d) MONEYBAR_NO_NOTIFICATIONS=1 src-tauri/target/debug/money-bar   # a run against a temp folder
 ```
 
 `MONEYBAR_SEED_SAMPLE=1` (honoured only together with `MONEYBAR_DATA_DIR`) fills an empty temp folder with fake data for
