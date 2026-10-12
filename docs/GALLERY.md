@@ -1,4 +1,4 @@
-# Money Bar (cross-platform) gallery
+# Money Bar gallery
 
 More screenshots for the [README](../README.md). All of them use made-up sample data, never real data.
 
