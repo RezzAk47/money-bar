@@ -71,16 +71,32 @@ export function App({ ctl }: { ctl: Controller }) {
 
 function Banners({ ctl }: { ctl: Controller }) {
   const s = ctl.store;
+  const [asking, setAsking] = useState(false);
+  const yesBtn = useRef<HTMLButtonElement>(null);
+  const startBtn = useRef<HTMLButtonElement>(null);
+  useEffect(() => { if (asking) yesBtn.current?.focus(); }, [asking]);
+  const keep = () => { setAsking(false); setTimeout(() => startBtn.current?.focus(), 0); };
   return (
     <>
       {s.loadError !== null && (
         <div class="banner error" role="alert">
           <p><strong>entries.json cannot be read.</strong> Nothing will be saved or changed until it is fixed.</p>
           <p class="detail" dir="auto">{s.loadError}</p>
-          <div class="row">
-            <button class="btn" onClick={() => void s.startOver()}>Keep a copy and start over</button>
-            <button class="btn" onClick={() => void ctl.backend.revealData()}>Show the folder</button>
-          </div>
+          {asking ? (
+            <div class="row">
+              <p id="start-over-q">Start over with an empty list? The unreadable file is kept next to it as a backup.</p>
+              <span class="confirm" role="group" aria-labelledby="start-over-q"
+                onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); keep(); } }}>
+                <button class="btn danger" ref={yesBtn} onClick={() => { setAsking(false); void s.startOver(); }}>Yes, keep a copy and start over</button>
+                <button class="btn" onClick={keep}>Cancel</button>
+              </span>
+            </div>
+          ) : (
+            <div class="row">
+              <button class="btn" ref={startBtn} onClick={() => setAsking(true)}>Keep a copy and start over</button>
+              <button class="btn" onClick={() => void ctl.backend.revealData()}>Show the folder</button>
+            </div>
+          )}
         </div>
       )}
       {s.saveError !== null && s.loadError === null && <div class="banner error" role="alert"><p>Could not save: {s.saveError}</p></div>}

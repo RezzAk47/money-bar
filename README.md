@@ -22,7 +22,8 @@ Tauri 2 (Rust) and Preact. It is the cross-platform sibling of the SwiftUI Mac a
 
 - Quick add for expenses, income and tips, with categories, notes and dates.
 - Today's spent, earned, tips and net, plus card payments shown apart.
-- Monthly budgets per category, with optional alerts at 80% and 100% (off by default).
+- Monthly budgets per category (set in Settings, or click a category in Reports), with optional alerts at 80% and 100% (off by
+  default).
 - Reports by day, week, month or a custom range: bars or line, donut and month-at-a-glance.
 - Recurring entries, custom categories, your own currency symbol, CSV export.
 - Light and dark, colour themes, three layouts (Cards, List, Glass), start at login. Keyboard friendly and right-to-left safe.

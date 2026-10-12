@@ -96,6 +96,28 @@ await page.waitForTimeout(250);
 ok(await page.locator('h1').innerText() === 'Reports', 'Reports opens');
 ok(await page.evaluate(() => document.activeElement?.tagName) === 'H1', 'focus moves to the Reports heading');
 ok(await page.locator('svg[role=img]').count() >= 2, 'charts have text labels');
+// a category row sets its monthly budget inline (Mac parity); Escape closes only that form
+const foodRow = page.getByRole('button', { name: /^Food, \d+ percent/ });
+await foodRow.click();
+await page.waitForTimeout(150);
+ok(await page.getByRole('form', { name: 'Monthly budget for Food' }).count() === 1, 'clicking a report category opens its budget form');
+ok(await page.evaluate(() => document.activeElement?.getAttribute('placeholder')) === 'No limit', 'the budget field gets focus');
+await page.keyboard.type('abc');
+await page.keyboard.press('Enter');
+ok((await page.locator('#budget-error').innerText()).includes('not an amount'), 'a bad budget shows the named money error');
+await page.locator('.budget-editor input').fill('300');
+await page.keyboard.press('Enter');
+await page.waitForTimeout(250);
+ok(await page.locator('.budget-editor').count() === 0, 'Save closes the budget form');
+ok((await page.locator('.budget-rows').innerText()).includes('of $300.00'), 'the new budget shows in the budget bars');
+ok(((await foodRow.getAttribute('aria-label')) ?? '').includes('monthly budget $300.00'), 'the row says it has a budget');
+await foodRow.click();
+await page.waitForTimeout(150);
+ok(await page.locator('.budget-editor input').inputValue() === '300.00', 'the form shows the current budget');
+await page.keyboard.press('Escape');
+await page.waitForTimeout(150);
+ok(await page.locator('.budget-editor').count() === 0 && await page.locator('h1').innerText() === 'Reports', 'Escape closes only the budget form');
+ok(await page.evaluate(() => document.activeElement?.classList.contains('catrow')), 'focus returns to the category row');
 await page.getByRole('radio', { name: 'Custom' }).check();
 ok(await page.locator('input[type=date]').count() === 2, 'Custom shows two dates');
 await page.getByRole('radio', { name: 'Day' }).check();
@@ -109,6 +131,14 @@ await page.getByRole('button', { name: 'Settings' }).click();
 await page.getByRole('radio', { name: 'Dark', exact: true }).check();
 await page.waitForTimeout(150);
 ok(await page.evaluate(() => document.documentElement.dataset.theme) === 'dark', 'choosing Dark switches the theme');
+// the recurring form starts in the amount field; Escape closes only the form
+await page.getByRole('button', { name: 'Add recurring entry' }).click();
+await page.waitForTimeout(150);
+ok(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')) === 'Amount', 'the recurring form starts in the amount field');
+await page.keyboard.press('Escape');
+await page.waitForTimeout(150);
+ok(await page.getByRole('form', { name: 'New recurring entry' }).count() === 0 && await page.locator('h1').innerText() === 'Settings', 'Escape closes only the recurring form, Settings stays');
+ok((await page.evaluate(() => document.activeElement?.textContent ?? '')).includes('Add recurring entry'), 'focus returns to Add recurring entry');
 await page.getByRole('button', { name: 'Set budget for Rent' }).click();
 await page.keyboard.press('Escape');
 
@@ -124,6 +154,21 @@ await bp.goto(base + '?fixture=broken'); await bp.waitForSelector('html[data-rea
 const alert = await bp.getByRole('alert').first().innerText();
 ok(alert.includes('entries > #1 > cents') || (await bp.locator('.detail').innerText()).includes('entries > #1 > cents'), 'a broken file shows the named error');
 ok(await bp.getByRole('button', { name: 'Keep a copy and start over' }).count() === 1, 'start over is offered');
+await bp.getByRole('button', { name: 'Keep a copy and start over' }).click();
+await bp.waitForTimeout(150);
+ok(await bp.getByRole('group', { name: /^Start over with an empty list\?/ }).count() === 1, 'start over asks first');
+ok(await bp.evaluate(() => document.activeElement?.textContent) === 'Yes, keep a copy and start over', 'the confirm button gets focus');
+await bp.keyboard.press('Escape');
+await bp.waitForTimeout(150);
+ok(await bp.getByRole('group', { name: /^Start over/ }).count() === 0 && (await bp.locator('.banner.error').count()) === 1, 'Escape cancels; the file is not touched');
+ok(await bp.evaluate(() => document.activeElement?.textContent) === 'Keep a copy and start over', 'focus returns to the start-over button');
+await bp.getByRole('button', { name: 'Keep a copy and start over' }).click();
+await bp.getByRole('button', { name: 'Cancel' }).click();
+ok((await bp.locator('.banner.error').count()) === 1, 'Cancel keeps the broken file as it is');
+await bp.getByRole('button', { name: 'Keep a copy and start over' }).click();
+await bp.getByRole('button', { name: 'Yes, keep a copy and start over' }).click();
+await bp.waitForTimeout(300);
+ok((await bp.locator('.banner.error').count()) === 0, 'Yes starts over');
 
 // a crash before start shows a plain message, not a blank window
 const cp = await ctx.newPage();

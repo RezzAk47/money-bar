@@ -297,3 +297,28 @@ describe('every read is inside a try', () => {
     io.stat = stat;
   });
 });
+
+describe('budgets from typed text (Settings and the Reports category rows share it)', () => {
+  it('sets, replaces and clears with the Settings rules', async () => {
+    const { s, f } = await mk();
+    expect(await s.setBudgetFromText('Food', ' 250 ')).toBeNull();
+    expect(s.budgetFor('Food')).toBe(25000);
+    expect(s.budgetFor('food')).toBe(25000); // any letter case
+    expect(decodeMoneyFile(read(f('entries.json'))).settings.budgets).toEqual({ Food: 25000 });
+    expect(await s.setBudgetFromText('food', '$12.50')).toBeNull();
+    expect(Object.values(s.settings.budgets)).toEqual([1250]); // one budget per category, whatever the case
+    expect(await s.setBudgetFromText('Food', '   ')).toBeNull();
+    expect(s.budgetFor('Food')).toBeUndefined();
+  });
+  it('refuses bad amounts with the named money errors and changes nothing', async () => {
+    const { s } = await mk();
+    await s.setBudgetFromText('Food', '100');
+    expect(await s.setBudgetFromText('Food', 'abc')).toBe('That is not an amount. Try 12.50.');
+    expect(await s.setBudgetFromText('Food', '1.234')).toBe('Use at most 2 decimals, like 12.50.');
+    expect(await s.setBudgetFromText('Food', '0')).toBe('The amount must be more than zero.');
+    expect(await s.setBudgetFromText('Food', '-5')).toContain('cannot be negative');
+    expect(await s.setBudgetFromText('Food', '999999999999')).toContain('too large');
+    expect(await s.setBudgetFromText('Debt payment', '50')).toContain('no budget');
+    expect(s.budgetFor('Food')).toBe(10000);
+  });
+});

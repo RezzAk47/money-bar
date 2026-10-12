@@ -89,11 +89,17 @@ export const entriesIn = (all: Entry[], r: DayRange): Entry[] => all.filter((e) 
 const averages = (q: Quad, days: number): Quad => ({ spent: divRound(q.spent, days), earned: divRound(q.earned, days), tips: divRound(q.tips, days), debtPaid: 0 });
 
 /** Fits a category list into `slots` rows: the smallest are merged into one "Other categories (N)" row, so rows add up to the full spend. */
+const OTHER_PREFIX = 'Other categories (';
+/** A report row that can get a budget: a real spending category, not the grouped "Other categories (N)" row or card payments. */
+export function budgetable(name: string): boolean {
+  return !name.startsWith(OTHER_PREFIX) && !isDebtName(name);
+}
+
 export function groupedCategories(cats: CategoryTotal[], slots: number): CategoryTotal[] {
   const n = Math.max(2, slots);
   if (cats.length <= n) return cats;
   const rest = cats.slice(n - 1);
-  const other: CategoryTotal = { name: `Other categories (${rest.length})`, cents: rest.reduce((a, c) => a + c.cents, 0), count: rest.reduce((a, c) => a + c.count, 0), percent: rest.reduce((a, c) => a + c.percent, 0) };
+  const other: CategoryTotal = { name: `${OTHER_PREFIX}${rest.length})`, cents: rest.reduce((a, c) => a + c.cents, 0), count: rest.reduce((a, c) => a + c.count, 0), percent: rest.reduce((a, c) => a + c.percent, 0) };
   return [...cats.slice(0, n - 1), other];
 }
 

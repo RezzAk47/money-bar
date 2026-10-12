@@ -6,9 +6,9 @@ import * as Civil from './civil';
 import { BACKUP_FILE, DAILY_BACKUP_FILE, ENTRIES_FILE } from './datadir';
 import { FileIO, FileStamp, Queue, errMessage, isConflict, sameStamp } from './io';
 import { DecodeError, Extra, newId } from './json';
-import { MAX_CENTS, formatMoney, moneyMessage } from './money';
+import { MAX_CENTS, formatMoney, moneyMessage, parseMoney } from './money';
 import {
-  DEBT_PAYMENT, EXPENSE_CATEGORIES, INCOME_SOURCES, MAX_CATEGORY_LENGTH, cleanCategory, isDebtName, normalize, sameName, strip,
+  DEBT_PAYMENT, EXPENSE_CATEGORIES, INCOME_SOURCES, MAX_CATEGORY_LENGTH, cleanCategory, foldKey, isDebtName, normalize, sameName, strip,
 } from './categories';
 import type { Kind } from './categories';
 import {
@@ -400,6 +400,19 @@ export class MoneyStore {
       if (cents > MAX_CENTS) return Promise.resolve(moneyMessage('tooLarge'));
     }
     return this.mutate((d) => { setBudgetIn(d.settings, category, cents); return null; });
+  }
+  /** Sets a monthly budget from typed text, the same rules as Settings: empty clears it, otherwise a positive amount. */
+  setBudgetFromText(category: string, text: string): Promise<string | null> {
+    const t = text.trim();
+    if (t === '') return this.setBudget(category, undefined);
+    const r = parseMoney(t, this.settings.currencySymbol);
+    if (!r.ok) return Promise.resolve(moneyMessage(r.error));
+    return this.setBudget(category, r.cents);
+  }
+  /** The monthly budget of a category (any letter case), or undefined. */
+  budgetFor(category: string): number | undefined {
+    const k = foldKey(category);
+    return Object.entries(this.settings.budgets).find(([n]) => foldKey(n) === k)?.[1];
   }
   async setBudgetNotify(on: boolean): Promise<string | null> {
     // switching it on again gives the alerts a fresh set of tries

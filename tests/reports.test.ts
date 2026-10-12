@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as Civil from '../src/core/civil';
-import { MAX_RANGE_DAYS, budgetStatuses, buckets, dayCount, dayKeys, glancePercent, groupedCategories, makeGlance, makeRange, makeReport, net, percentChange, quad, rangeContaining, reportFor, shifted, budgetLevel, budgetMessage, alertLevel } from '../src/core/reports';
+import { MAX_RANGE_DAYS, budgetable, budgetStatuses, buckets, dayCount, dayKeys, glancePercent, groupedCategories, makeGlance, makeRange, makeReport, net, percentChange, quad, rangeContaining, reportFor, shifted, budgetLevel, budgetMessage, alertLevel } from '../src/core/reports';
 import { csvExport, csvFileText } from '../src/core/csv';
 import { E } from './helpers';
 
@@ -143,5 +143,18 @@ describe('navigation limits (years 1 to 9999)', () => {
     expect(stepPeriod(mo, rangeContaining(mo, '9999-12-15', 2), 1, 2)).toBeNull();
     // the report for the last month works and has 31 days
     expect(reportFor([], mo, '9999-12-31', 2).dayCount).toBe(31);
+  });
+});
+
+describe('report category rows that can get a budget', () => {
+  it('real spending categories only: not the grouped row, not card payments', () => {
+    expect(budgetable('Food')).toBe(true);
+    expect(budgetable('خوراک')).toBe(true);
+    expect(budgetable('Debt payment')).toBe(false);
+    expect(budgetable('debt PAYMENTS')).toBe(false);
+    const cats = Array.from({ length: 6 }, (_, i) => ({ name: `C${i}`, cents: 600 - i * 100, count: 1, percent: 10 }));
+    const rows = groupedCategories(cats, 3);
+    expect(rows.map((r) => budgetable(r.name))).toEqual([true, true, false]);
+    expect(rows[2].name).toBe('Other categories (4)');
   });
 });
