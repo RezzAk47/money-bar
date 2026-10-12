@@ -1,6 +1,6 @@
 # Money Bar
 
-[![CI](https://github.com/RezzAk47/money-bar-cross/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/RezzAk47/money-bar-cross/actions/workflows/ci.yml)
+[![CI](https://github.com/RezzAk47/money-bar/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/RezzAk47/money-bar/actions/workflows/ci.yml)
 ![Platforms: Windows, Linux, macOS](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-informational)
 ![Version 0.1.1](https://img.shields.io/badge/version-0.1.1-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -9,8 +9,7 @@
 
 Money Bar is a small tray / menu-bar app for Windows, Linux and macOS. Add an expense, income or tip in a few keystrokes, see
 today's totals and your budgets at a glance, and open reports, recurring entries and CSV export when you need them. Built with
-Tauri 2 (Rust) and Preact. It is the cross-platform sibling of the SwiftUI Mac app
-[money-bar](https://github.com/RezzAk47/money-bar) and reads and writes the same `entries.json`.
+Tauri 2 (Rust) and Preact.
 
 | Popup, light | Popup, dark | Report | Settings |
 |---|---|---|---|
@@ -30,7 +29,7 @@ Tauri 2 (Rust) and Preact. It is the cross-platform sibling of the SwiftUI Mac a
 
 ## Download
 
-Installers will be on the [Releases](https://github.com/RezzAk47/money-bar-cross/releases) page (coming soon). Until then,
+Installers will be on the [Releases](https://github.com/RezzAk47/money-bar/releases) page (coming soon). Until then,
 [build from source](#build-from-source).
 
 The builds are not code-signed, so Windows SmartScreen and macOS Gatekeeper will warn the first time you open the app.
@@ -67,8 +66,8 @@ Needs Node 24+, Rust 1.90 or newer, and the [Tauri 2 prerequisites](https://v2.t
 system (on Linux: WebKitGTK 4.1 and an AppIndicator library, see `.github/workflows/ci.yml`).
 
 ```sh
-git clone https://github.com/RezzAk47/money-bar-cross.git
-cd money-bar-cross
+git clone https://github.com/RezzAk47/money-bar.git
+cd money-bar
 npm ci --ignore-scripts
 npm run tauri build          # installer for this OS, in src-tauri/target/release/bundle
 npm run tauri dev            # or run it in development mode
@@ -94,8 +93,6 @@ automated test on all three, but nobody has used the Windows or Linux builds by 
 the Mac app are in [docs/DETAILS.md](docs/DETAILS.md#known-limits-and-differences-from-the-mac-app).
 
 ## Credits
-
-A port of the SwiftUI Mac app [money-bar](https://github.com/RezzAk47/money-bar), with the same file format.
 
 Third-party components and trademark notes: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) (full licence texts in
 [THIRD-PARTY-LICENSES.txt](THIRD-PARTY-LICENSES.txt)).

@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 60
     env:
       PRODUCT: 'Money Bar'
-      SLUG: 'money-bar-cross'
+      SLUG: 'money-bar'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -173,7 +173,7 @@ jobs:
     timeout-minutes: 60
     env:
       PRODUCT: 'Money Bar'
-      SLUG: 'money-bar-cross'
+      SLUG: 'money-bar'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -435,7 +435,7 @@ jobs:
     timeout-minutes: 60
     env:
       PRODUCT: 'Money Bar'
-      SLUG: 'money-bar-cross'
+      SLUG: 'money-bar'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
