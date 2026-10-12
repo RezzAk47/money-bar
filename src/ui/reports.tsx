@@ -6,7 +6,7 @@ import { Section, Segmented, longDay, monthName, shortDay } from './common';
 import * as Civil from '../core/civil';
 import { csvExport } from '../core/csv';
 import { divRound, plainMoney } from '../core/money';
-import { MAX_RANGE_DAYS, Period, Report, budgetable, buckets, budgetFraction, budgetLevel, budgetMessage, groupedCategories, makeRange, net, rangeContaining, stepPeriod } from '../core/reports';
+import { MAX_RANGE_DAYS, Period, Report, buckets, budgetFraction, budgetLevel, budgetMessage, groupedCategories, makeRange, net, rangeContaining, stepPeriod } from '../core/reports';
 import type { DayRange, Glance } from '../core/reports';
 import { foldKey } from '../core/categories';
 
@@ -173,6 +173,18 @@ function Categories({ r, ctl }: { r: Report; ctl: Controller }) {
   const budgeted = new Set(Object.keys(s.activeBudgets()).map(foldKey));
   const [open, setOpen] = useState<string | null>(null);
   const rowEls = useRef(new Map<string, HTMLButtonElement>()); // to give focus back to the row after its form closes
+  // The open form belongs to a row. When that row goes away (another period, a re-read file, merged into "Other"), forget
+  // it, so it never comes back later and takes the focus; if the focus was in it, put it on this card's heading.
+  const present = open !== null && rows.some((c) => c.name === open && s.canBudget(c.name));
+  useEffect(() => {
+    if (open === null || present) return;
+    setOpen(null);
+    const a = document.activeElement;
+    if (a === null || a === document.body) {
+      const h = document.querySelector<HTMLElement>('section[aria-label="Spending by category"] h2');
+      if (h) { h.tabIndex = -1; h.focus(); }
+    }
+  }, [open, present]);
   let a = 0;
   const segs = rows.map((c, i) => { const span = total > 0 ? (c.cents / total) * Math.PI * 2 : 0; const seg = { c, i, a0: a, a1: a + span }; a += span; return seg; });
   return (
@@ -187,7 +199,7 @@ function Categories({ r, ctl }: { r: Report; ctl: Controller }) {
             {rows.map((c, i) => {
               const has = budgeted.has(foldKey(c.name));
               const line = <><i class={`sw p${i % 8}`} /><bdi dir="auto" class="cname">{c.name}</bdi>{has && <span title="Has a budget"><I.Target width={13} height={13} /><span class="sr"> has a budget</span></span>}<span class="grow" /><span class="muted num">{Math.round(c.percent)}%</span><b class="num">{s.money(c.cents)}</b></>;
-              if (!budgetable(c.name)) return <li key={c.name}>{line}</li>;
+              if (!s.canBudget(c.name)) return <li key={c.name}>{line}</li>;
               const limit = s.budgetFor(c.name);
               return (
                 <li key={c.name} class="cat-item">

@@ -17,7 +17,7 @@ import {
 } from './model';
 import {
   BudgetStatus, DayRange, Glance, Period, Report, alertLevel, budgetLevel, budgetMessage, budgetPercent, budgetStatuses, makeGlance,
-  makeReport, quad, rangeContaining, shifted,
+  budgetable, makeReport, quad, rangeContaining, shifted,
 } from './reports';
 import type { Quad } from './reports';
 import { MAX_RULES, applyRules, cleanRule, due, latest, validateRule } from './recurring';
@@ -409,10 +409,16 @@ export class MoneyStore {
     if (!r.ok) return Promise.resolve(moneyMessage(r.error));
     return this.setBudget(category, r.cents);
   }
-  /** The monthly budget of a category (any letter case), or undefined. */
+  /** The active monthly budget of a category (any letter case), or undefined. A budget of a category that is not in the
+   * list (an orphan) does not count, the same as in the budget bars and alerts. */
   budgetFor(category: string): number | undefined {
     const k = foldKey(category);
-    return Object.entries(this.settings.budgets).find(([n]) => foldKey(n) === k)?.[1];
+    return Object.entries(this.activeBudgets()).find(([n]) => foldKey(n) === k)?.[1];
+  }
+  /** A report row can get a budget only when it names a spending category in the list: not the grouped row, not card
+   * payments, and not a name that only old or imported entries carry (that budget would be an orphan: never shown, never sent). */
+  canBudget(category: string): boolean {
+    return budgetable(category) && this.expenseCategories().some((c) => sameName(c, category));
   }
   async setBudgetNotify(on: boolean): Promise<string | null> {
     // switching it on again gives the alerts a fresh set of tries

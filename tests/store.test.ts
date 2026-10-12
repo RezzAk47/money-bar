@@ -322,3 +322,25 @@ describe('budgets from typed text (Settings and the Reports category rows share 
     expect(s.budgetFor('Food')).toBe(10000);
   });
 });
+
+describe('which report rows may set a budget', () => {
+  it('only categories in the list: an old or imported name would make an orphan budget', async () => {
+    const { s } = await mk();
+    expect(s.canBudget('Food')).toBe(true);
+    expect(s.canBudget('food')).toBe(true);
+    expect(s.canBudget('غذا')).toBe(false); // only entries carry it
+    expect(s.canBudget('Other categories (3)')).toBe(false);
+    expect(s.canBudget('Debt payment')).toBe(false);
+    expect((await s.addCategory('غذا')).error).toBeNull();
+    expect(s.canBudget('غذا')).toBe(true);
+    await s.setBudgetFromText('غذا', '50');
+    expect(s.budgetFor('غذا')).toBe(5000);
+    await s.removeCategory('غذا');
+    expect(s.canBudget('غذا')).toBe(false);
+    // a budget for a name not in the list (from a file, or the other app) is an orphan: not reported as the row's budget
+    await s.updateSettings((x) => { x.budgets = { ...x.budgets, Snacks: 7000 }; });
+    expect(s.orphanBudgets()).toEqual(['Snacks']);
+    expect(s.budgetFor('Snacks')).toBeUndefined();
+    expect(s.budgetFor('Food')).toBeUndefined();
+  });
+});

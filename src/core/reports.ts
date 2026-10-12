@@ -88,13 +88,14 @@ export function quad(entries: Iterable<Entry>): Quad {
 export const entriesIn = (all: Entry[], r: DayRange): Entry[] => all.filter((e) => e.day >= r.start && e.day <= r.end);
 const averages = (q: Quad, days: number): Quad => ({ spent: divRound(q.spent, days), earned: divRound(q.earned, days), tips: divRound(q.tips, days), debtPaid: 0 });
 
-/** Fits a category list into `slots` rows: the smallest are merged into one "Other categories (N)" row, so rows add up to the full spend. */
 const OTHER_PREFIX = 'Other categories (';
-/** A report row that can get a budget: a real spending category, not the grouped "Other categories (N)" row or card payments. */
+/** A report row that can get a budget: a real spending category, not the grouped "Other categories (N)" row or card payments.
+ * (The store also checks that the category is in the user's list: see MoneyStore.canBudget.) */
 export function budgetable(name: string): boolean {
   return !name.startsWith(OTHER_PREFIX) && !isDebtName(name);
 }
 
+/** Fits a category list into `slots` rows: the smallest are merged into one "Other categories (N)" row, so rows add up to the full spend. */
 export function groupedCategories(cats: CategoryTotal[], slots: number): CategoryTotal[] {
   const n = Math.max(2, slots);
   if (cats.length <= n) return cats;

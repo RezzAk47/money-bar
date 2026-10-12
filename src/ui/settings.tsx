@@ -140,12 +140,23 @@ function Recurring({ ctl }: { ctl: Controller }) {
   const [busy, setBusy] = useState(false);
   const amount = useRef<HTMLInputElement>(null);
   const addBtn = useRef<HTMLButtonElement>(null);
+  const opener = useRef<HTMLElement | null>(null); // the button that opened the form (Add, or a rule's Edit)
+  const listHead = useRef<HTMLParagraphElement>(null);
   const formOpen = draft !== null;
   const formKey = draft?.id ?? '';
   // a new or edited rule starts in the amount field, like the Mac app
   useEffect(() => { if (formOpen) amount.current?.focus(); }, [formOpen, formKey]);
-  /** Closes the form (Cancel, Escape, after saving) and gives focus back to the Add button. */
-  const closeForm = () => { setDraft(null); setError(null); setTimeout(() => addBtn.current?.focus(), 0); };
+  /** Closes the form (Cancel, Escape, after saving) and gives focus back to what opened it: the rule's Edit button or Add.
+   * If that is gone or disabled (Add at the rule limit), the Add button, else the section's intro line. */
+  const closeForm = () => {
+    setDraft(null); setError(null);
+    setTimeout(() => {
+      const usable = (b: HTMLElement | null): b is HTMLElement => !!b && b.isConnected && !(b as HTMLButtonElement).disabled;
+      const target = [opener.current, addBtn.current].find(usable);
+      if (target) target.focus();
+      else if (listHead.current) { listHead.current.tabIndex = -1; listHead.current.focus(); }
+    }, 0);
+  };
   const blank = (): Draft => ({ id: null, kind: 'expense', amount: '', category: 'Rent', note: '', repeatKind: 'monthly', interval: '14', start: store.todayKey, end: '' });
   const edit = (r: RecurringRule): Draft => ({ id: r.id, kind: r.kind, amount: plainMoney(r.cents), category: r.category, note: r.note, repeatKind: r.repeatKind, interval: String(r.interval), start: r.start, end: r.end ?? '' });
   const set = (p: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...p } : d));
@@ -166,7 +177,7 @@ function Recurring({ ctl }: { ctl: Controller }) {
   const full = s.recurring.length >= MAX_RULES;
   return (
     <Section title="Recurring">
-      <p class="muted">Rent, pay, subscriptions: they add themselves on their date, once each, even if the app was closed. Deleting a rule keeps the entries it made.</p>
+      <p class="muted" ref={listHead}>Rent, pay, subscriptions: they add themselves on their date, once each, even if the app was closed. Deleting a rule keeps the entries it made.</p>
       <ul class="rules">
         {s.recurring.map((r) => {
           const next = nextDue(r);
@@ -183,7 +194,7 @@ function Recurring({ ctl }: { ctl: Controller }) {
                   <button class="btn" onClick={() => setAsking(null)}>Keep</button></span>
               ) : (<>
                 <button class="icon" aria-label={r.paused ? 'Resume' : 'Pause'} onClick={() => void store.setRulePaused(r.id, !r.paused)}>{r.paused ? <I.PlayI /> : <I.Pause />}</button>
-                <button class="icon" aria-label="Edit recurring entry" onClick={() => { setDraft(edit(r)); setError(null); }}><I.Pencil /></button>
+                <button class="icon" aria-label="Edit recurring entry" onClick={(e) => { opener.current = e.currentTarget; setDraft(edit(r)); setError(null); }}><I.Pencil /></button>
                 <button class="icon" aria-label="Delete recurring entry" onClick={() => setAsking(r.id)}><I.Trash /></button></>)}
             </li>
           );
@@ -212,7 +223,7 @@ function Recurring({ ctl }: { ctl: Controller }) {
         </form>
       ) : (
         <>
-          <button class="btn" ref={addBtn} disabled={full} onClick={() => { setDraft(blank()); setError(null); }}><I.Plus />Add recurring entry</button>
+          <button class="btn" ref={addBtn} disabled={full} onClick={(e) => { opener.current = e.currentTarget; setDraft(blank()); setError(null); }}><I.Plus />Add recurring entry</button>
           {full && <p class="muted small">You can have at most {MAX_RULES} recurring entries.</p>}
         </>
       )}
